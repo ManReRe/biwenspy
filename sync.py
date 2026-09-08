@@ -27,15 +27,30 @@ def _item_id(item):
 
 
 def sync_board(client, conn):
+    """Page through the league board and store money events.
+
+    Two modes, tracked via the ``sync_state`` table (key ``board_backfill_complete``):
+
+    - Backfill not yet complete (never reached the true end of history, e.g. an earlier
+      run crashed mid-walk): walk the ENTIRE board regardless of whether individual items
+      are already known. Stopping early on a "seen" item here would silently and
+      permanently abandon ever fetching older, never-synced pages below that point.
+      Re-processing already-known items is safe: inserts are idempotent.
+    - Backfill already complete (a previous run walked all the way to a short/empty
+      page): steady-state fast path, safe to stop as soon as a previously-seen item is
+      encountered, since a full walk has already proven there's no gap below it.
+
+    In both modes, reaching a page shorter than PAGE_SIZE (or an empty page) is the
+    natural end of the walk; if backfill wasn't already marked complete, mark it now.
+    """
+    backfill_complete = db.get_sync_state(conn, "board_backfill_complete") == "true"
     offset = 0
     while True:
         page = client.get_board_page(offset, limit=PAGE_SIZE)
-        if not page:
-            return
 
         for item in page:
             item_id = _item_id(item)
-            if db.has_board_item(conn, item_id):
+            if backfill_complete and db.has_board_item(conn, item_id):
                 return
             db.mark_board_item_seen(conn, item_id)
 
@@ -48,6 +63,8 @@ def sync_board(client, conn):
                 db.insert_round_points(conn, entry["round_id"], entry["user_id"], entry["points"])
 
         if len(page) < PAGE_SIZE:
+            if not backfill_complete:
+                db.set_sync_state(conn, "board_backfill_complete", "true")
             return
         offset += PAGE_SIZE
 
