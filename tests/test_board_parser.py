@@ -112,6 +112,34 @@ def test_parses_round_finished_bonus_and_points():
     assert json.loads(first["reason_json"]) == {"bonusPoint": 875000, "bonusFixed": 500000}
 
 
+def test_round_finished_events_for_the_same_round_get_a_stable_id_regardless_of_date():
+    # Biwenger can republish a "roundFinished" board item for the same round_id
+    # under a different board-item date -- e.g. a "recalculation" firing again
+    # with identical results once a round's postponed matches settle (observed
+    # for real data: "Jornada 1", round id 4899, republished ~6 minutes later
+    # with byte-identical results). If money_event ids were date-dependent,
+    # sync.py would store the republish as a second, distinct income event and
+    # double-count that round's bonus for every user. The id must depend only
+    # on (round_id, user_id, direction) so the two parses collide and only one
+    # survives db.insert_money_event's idempotent insert.
+    result = {"user": {"id": 1, "name": "Ana"}, "points": 24, "bonus": 1340000, "reason": {}}
+    item_first = {
+        "type": "roundFinished",
+        "content": {"round": {"id": 4899, "name": "Jornada 1"}, "results": [result]},
+        "date": 1787220323,
+    }
+    item_republished = {
+        "type": "roundFinished",
+        "content": {"round": {"id": 4899, "name": "Jornada 1"}, "results": [result]},
+        "date": 1787580032,
+    }
+
+    id_first = parse_board_page([item_first])["money_events"][0]["id"]
+    id_republished = parse_board_page([item_republished])["money_events"][0]["id"]
+
+    assert id_first == id_republished
+
+
 def test_ignores_unrelated_event_types():
     items = [{"type": "playerMovements", "content": [{"type": "join", "player": 1}], "date": 123}]
 

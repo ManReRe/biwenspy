@@ -42,7 +42,13 @@ def parse_board_page(items):
                     "points": result.get("points", 0),
                 })
                 money_events.append({
-                    "id": _event_id(date, "roundFinished", round_id, "income", user_id),
+                    # Deliberately NOT date-based: Biwenger can republish the same
+                    # round's roundFinished item under a different board-item date
+                    # (e.g. a recalculation once postponed matches settle) with
+                    # identical results. Keying on (round_id, user_id) instead of
+                    # date makes a republish collide with the original event id
+                    # instead of double-counting that round's bonus.
+                    "id": _event_id("roundFinished", "roundFinished", round_id, "income", user_id),
                     "date": date,
                     "round_id": round_id,
                     "type": "roundFinished",
