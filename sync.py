@@ -146,6 +146,11 @@ def main():
         sync_board(client, conn)
         sync_players(client, conn)
         calibrate_starting_balance(client, conn, config["user_id"])
+        # Biwenger's "balance" league setting can hide every OTHER manager's cash
+        # balance from the API -- config["user_id"] is the one manager whose
+        # starting-balance calibration is real, verified data; dashboard.py uses
+        # this to mark every other manager's reconstructed balance as an estimate.
+        db.set_sync_state(conn, "owner_user_id", str(config["user_id"]))
 
         for standing in client.get_standings():
             db.upsert_standing(conn, standing["id"], standing["points"], standing["position"])

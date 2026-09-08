@@ -191,3 +191,45 @@ def test_build_dashboard_html_falls_back_to_the_default_starting_balance_when_un
     output = dashboard.build_dashboard_html(conn)
 
     assert "19,000,000" in output  # Ana's balance off the 20,000,000 default
+
+
+def test_build_dashboard_html_marks_only_the_owners_balance_as_verified():
+    # Biwenger's "balance" privacy setting hides every manager's cash balance
+    # from the API except the logged-in account's own. sync.py records which
+    # user_id that is (owner_user_id); only that manager's row is real,
+    # verified data -- every other manager's reconstructed balance rests on the
+    # unverifiable assumption that everyone started the season with the same
+    # budget, and must be visually distinguished as an estimate, not presented
+    # with equal confidence.
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    db.set_sync_state(conn, "owner_user_id", "1")  # Ana is the account owner
+
+    output = dashboard.build_dashboard_html(conn)
+
+    # Ana's row (the owner) carries the "verified" marker; Beto's (not the
+    # owner) carries the "estimated" one.
+    ana_row = re.search(r"<tr><td>\d+</td><td>Ana</td>.*?</tr>", output).group(0)
+    beto_row = re.search(r"<tr><td>\d+</td><td>Beto</td>.*?</tr>", output).group(0)
+    assert "&#10003;" in ana_row
+    assert "&asymp;" not in ana_row
+    assert "&asymp;" in beto_row
+    assert "&#10003;" not in beto_row
+
+
+def test_build_dashboard_html_marks_everyone_estimated_when_owner_unknown():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    # No sync_state["owner_user_id"] set (e.g. an older biwenger.db from before
+    # this field existed) -- nobody's balance can be claimed as verified.
+
+    output = dashboard.build_dashboard_html(conn)
+
+    # Check the standings ROWS specifically, not the legend text below the
+    # table (which always mentions both symbols to explain what they mean).
+    ana_row = re.search(r"<tr><td>\d+</td><td>Ana</td>.*?</tr>", output).group(0)
+    beto_row = re.search(r"<tr><td>\d+</td><td>Beto</td>.*?</tr>", output).group(0)
+    assert "&#10003;" not in ana_row
+    assert "&#10003;" not in beto_row
+    assert "&asymp;" in ana_row
+    assert "&asymp;" in beto_row

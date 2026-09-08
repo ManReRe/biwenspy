@@ -46,20 +46,32 @@ def _points_chart(points_timelines, names):
     return fig
 
 
-def _standings_table_html(standings, names, current_balances, starting_balance):
+def _standings_table_html(standings, names, current_balances, starting_balance, owner_user_id):
     rows = []
     for row in standings:
         name = html.escape(names.get(row["user_id"], str(row["user_id"])))
         # A manager with zero recorded money events hasn't traded yet, so their
         # balance is still the starting amount, not 0.
         balance = current_balances.get(row["user_id"], starting_balance)
+        # Biwenger's "balance" privacy setting can hide every manager's cash
+        # balance from the API except the logged-in account's own -- that one
+        # balance is real, verified data (sync.py calibrates the whole season's
+        # starting balance against it); every other manager's figure rests on
+        # the unverifiable assumption that Biwenger gave everyone the same
+        # starting budget at the last season transition, so it's marked as an
+        # estimate rather than presented with the same confidence.
+        marker = "&#10003;" if row["user_id"] == owner_user_id else "&asymp;"
         rows.append(
             f"<tr><td>{row['position']}</td><td>{name}</td>"
-            f"<td>{row['points']}</td><td>{balance:,.0f} EUR</td></tr>"
+            f"<td>{row['points']}</td><td>{marker} {balance:,.0f} EUR</td></tr>"
         )
     return (
         "<table><thead><tr><th>Pos.</th><th>Manager</th><th>Puntos</th>"
         "<th>Dinero</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        "<p><small>&#10003; verificado contra tu saldo real. "
+        "&asymp; estimado (Biwenger no permite comprobar el saldo de otros managers via API; "
+        "se asume que todos partieron con el mismo presupuesto en el cambio de temporada, "
+        "pero esto no se puede confirmar).</small></p>"
     )
 
 
@@ -181,6 +193,8 @@ def build_dashboard_html(conn):
     # before any sync, or the owner's balance couldn't be fetched).
     starting_balance_raw = db.get_sync_state(conn, "starting_balance")
     starting_balance = int(starting_balance_raw) if starting_balance_raw is not None else analytics.STARTING_BALANCE
+    owner_user_id_raw = db.get_sync_state(conn, "owner_user_id")
+    owner_user_id = int(owner_user_id_raw) if owner_user_id_raw is not None else None
 
     balance_timelines = analytics.compute_balance_timeline(events, starting_balance=starting_balance)
     current_balances = analytics.compute_current_balances(events, starting_balance=starting_balance)
@@ -199,7 +213,7 @@ def build_dashboard_html(conn):
 <h1>Dashboard financiero de la liga</h1>
 <p>Dinero de partida por manager esta temporada: {starting_balance:,} EUR</p>
 <h2>Clasificacion</h2>
-{_standings_table_html(standings, names, current_balances, starting_balance)}
+{_standings_table_html(standings, names, current_balances, starting_balance, owner_user_id)}
 <h2>Evolucion del dinero</h2>
 {balance_fig_html}
 <h2>Evolucion de puntos</h2>
