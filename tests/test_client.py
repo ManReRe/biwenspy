@@ -74,3 +74,23 @@ def test_raises_auth_error_on_401():
     client, _ = _client(FakeResponse(401, {"status": 401, "message": "Invalid user"}))
     with pytest.raises(BiwengerAuthError):
         client.get_league_users()
+
+
+def test_get_own_balance_finds_the_matching_league():
+    payload = {
+        "status": 200,
+        "data": {
+            "leagues": [
+                {"id": 1111, "user": {"id": 99, "balance": 5000}},
+                {"id": 1967092, "user": {"id": 12683880, "balance": 38470}},
+            ],
+        },
+    }
+    client, _ = _client(FakeResponse(200, payload))
+    assert client.get_own_balance() == 38470
+
+
+def test_get_own_balance_returns_none_when_league_not_found():
+    payload = {"status": 200, "data": {"leagues": [{"id": 1111, "user": {"id": 99, "balance": 5000}}]}}
+    client, _ = _client(FakeResponse(200, payload))
+    assert client.get_own_balance() is None

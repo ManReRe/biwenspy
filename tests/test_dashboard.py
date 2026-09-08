@@ -160,3 +160,34 @@ def test_movement_description_never_renders_the_literal_none_for_an_unresolvable
     description = dashboard._movement_description(event, names={}, players={})
     assert "None" not in description
     assert description == "Compra a un manager desconocido"
+
+
+def test_build_dashboard_html_uses_the_calibrated_starting_balance_when_set():
+    # sync.py's calibrate_starting_balance backsolves the real starting balance
+    # for the current season (a board-log blind spot: season transitions can
+    # reset budgets with no corresponding event) and stores it in sync_state.
+    # The dashboard must use that figure -- not the plain 20,000,000 default --
+    # for both the reconstructed balance and the zero-movements fallback.
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    db.set_sync_state(conn, "starting_balance", "18420000")
+
+    output = dashboard.build_dashboard_html(conn)
+
+    # Ana: 18,420,000 + 1,000,000 (points) - 2,000,000 (purchase) = 17,420,000
+    assert "17,420,000" in output
+    # Beto has no money events at all: falls back to the calibrated starting
+    # balance, not the hardcoded 20,000,000 default.
+    assert "18,420,000 EUR" in output
+    assert "20,000,000" not in output
+
+
+def test_build_dashboard_html_falls_back_to_the_default_starting_balance_when_uncalibrated():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    # No sync_state["starting_balance"] set -- e.g. dashboard.py run before the
+    # first sync.py completed a calibration.
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "19,000,000" in output  # Ana's balance off the 20,000,000 default

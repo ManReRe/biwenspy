@@ -3,6 +3,7 @@ import hashlib
 import json
 import sys
 
+import analytics
 import board_parser
 import db
 from client import BiwengerAuthError, BiwengerClient
@@ -89,6 +90,35 @@ def sync_board(client, conn):
         offset += PAGE_SIZE
 
 
+def calibrate_starting_balance(client, conn, owner_user_id):
+    """Store the real starting balance for the current season in sync_state.
+
+    The board's event log only ever reflects transactions -- it has no event for
+    a season transition resetting (or partially resetting) everyone's budget, so
+    a hardcoded ``analytics.STARTING_BALANCE`` can silently diverge from reality
+    across a season boundary. The API does expose the logged-in account's own
+    *current* balance even when the league hides other managers' balances
+    (``client.get_own_balance``), so that one real number is used to back-solve
+    the starting balance this season must have actually begun with: the owner's
+    known current balance minus the net of every money event already stored for
+    them equals what they started with. That calibrated figure is then applied
+    uniformly to every manager (dashboard.py), since Biwenger resets are a
+    league-wide season mechanic, not something that varies who is being synced.
+
+    If the API can't report the owner's balance (e.g. they've left the league),
+    ``sync_state["starting_balance"]`` is left untouched -- callers fall back to
+    ``analytics.STARTING_BALANCE``.
+    """
+    own_balance = client.get_own_balance()
+    if own_balance is None:
+        return
+
+    events = db.get_all_money_events(conn)
+    net_for_owner = analytics.compute_current_balances(events, starting_balance=0).get(owner_user_id, 0)
+    starting_balance = own_balance - net_for_owner
+    db.set_sync_state(conn, "starting_balance", str(starting_balance))
+
+
 def sync_players(client, conn):
     events = db.get_all_money_events(conn)
     known_ids = db.get_known_player_ids(conn)
@@ -115,6 +145,7 @@ def main():
 
         sync_board(client, conn)
         sync_players(client, conn)
+        calibrate_starting_balance(client, conn, config["user_id"])
 
         for standing in client.get_standings():
             db.upsert_standing(conn, standing["id"], standing["points"], standing["position"])

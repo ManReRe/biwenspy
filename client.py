@@ -45,6 +45,22 @@ class BiwengerClient:
     def get_board_page(self, offset, limit=500):
         return self._get(f"/league/{self.league_id}/board", params={"offset": offset, "limit": limit})
 
+    def get_own_balance(self):
+        """Return the logged-in user's real current balance for this league, or
+        None if it can't be determined (e.g. the account has left the league).
+
+        This is the one balance figure the API exposes directly even when the
+        league's "balance" privacy setting is "hidden" (that setting only hides
+        *other* managers' balances) -- used to calibrate the reconstructed
+        balance timeline against reality, since season transitions can reset
+        budgets in ways the board's event log doesn't capture.
+        """
+        data = self._get("/account")
+        for league in data.get("leagues", []):
+            if league.get("id") == self.league_id:
+                return league.get("user", {}).get("balance")
+        return None
+
     def get_players(self):
         data = self._get("/competitions/la-liga/data", params={"lang": "es", "score": "5"})
         teams = {int(team_id): info.get("name") for team_id, info in data.get("teams", {}).items()}

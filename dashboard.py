@@ -46,13 +46,13 @@ def _points_chart(points_timelines, names):
     return fig
 
 
-def _standings_table_html(standings, names, current_balances):
+def _standings_table_html(standings, names, current_balances, starting_balance):
     rows = []
     for row in standings:
         name = html.escape(names.get(row["user_id"], str(row["user_id"])))
         # A manager with zero recorded money events hasn't traded yet, so their
         # balance is still the starting amount, not 0.
-        balance = current_balances.get(row["user_id"], analytics.STARTING_BALANCE)
+        balance = current_balances.get(row["user_id"], starting_balance)
         rows.append(
             f"<tr><td>{row['position']}</td><td>{name}</td>"
             f"<td>{row['points']}</td><td>{balance:,.0f} EUR</td></tr>"
@@ -173,8 +173,17 @@ def build_dashboard_html(conn):
     standings = db.get_standings(conn)
     players = db.get_players(conn)
 
-    balance_timelines = analytics.compute_balance_timeline(events)
-    current_balances = analytics.compute_current_balances(events)
+    # The board's event log has no event for a season-transition budget reset, so
+    # a hardcoded starting balance can silently diverge from reality across a
+    # season boundary. sync.py's calibrate_starting_balance backsolves the real
+    # figure from the account owner's actual current balance when it can; fall
+    # back to the plain 20,000,000 default otherwise (e.g. dashboard.py run
+    # before any sync, or the owner's balance couldn't be fetched).
+    starting_balance_raw = db.get_sync_state(conn, "starting_balance")
+    starting_balance = int(starting_balance_raw) if starting_balance_raw is not None else analytics.STARTING_BALANCE
+
+    balance_timelines = analytics.compute_balance_timeline(events, starting_balance=starting_balance)
+    current_balances = analytics.compute_current_balances(events, starting_balance=starting_balance)
     points_timelines = analytics.compute_points_timeline(round_points, rounds)
     facts = analytics.compute_curious_facts(events, players, users)
     breakdown = analytics.compute_income_breakdown(events, users)
@@ -188,8 +197,9 @@ def build_dashboard_html(conn):
 <head><meta charset="utf-8"><title>Dashboard Biwenger</title></head>
 <body>
 <h1>Dashboard financiero de la liga</h1>
+<p>Dinero de partida por manager esta temporada: {starting_balance:,} EUR</p>
 <h2>Clasificacion</h2>
-{_standings_table_html(standings, names, current_balances)}
+{_standings_table_html(standings, names, current_balances, starting_balance)}
 <h2>Evolucion del dinero</h2>
 {balance_fig_html}
 <h2>Evolucion de puntos</h2>
