@@ -117,17 +117,24 @@ def _breakdown_table_html(breakdown, names):
 
 
 def _movement_description(event, names, players):
+    # player_id is genuinely None (not merely unresolvable) for roundFinished events,
+    # and in principle for a market/transfer movement missing its "player" field. In
+    # either case analytics.player_name(players, None) returns None -- guard every
+    # branch that mentions a player so that value never gets interpolated into the
+    # description (which would otherwise render the literal text "None").
     player = analytics.player_name(players, event["player_id"])
     counterparty = names.get(event["counterparty_id"]) if event["counterparty_id"] else None
 
     if event["type"] == "roundFinished":
         return "Bonus de jornada"
     if event["type"] == "market":
-        return f"Compra de {player} al mercado"
+        return f"Compra de {player} al mercado" if player else "Compra al mercado"
     if event["type"] == "transfer" and event["direction"] == "income":
+        if not player:
+            return f"Venta a {counterparty}" if counterparty else "Venta al mercado"
         return f"Venta de {player} a {counterparty}" if counterparty else f"Venta de {player} al mercado"
     if event["type"] == "transfer" and event["direction"] == "expense":
-        return f"Compra de {player} a {counterparty}"
+        return f"Compra de {player} a {counterparty}" if player else f"Compra a {counterparty}"
     return event["type"]
 
 
