@@ -162,74 +162,50 @@ def test_movement_description_never_renders_the_literal_none_for_an_unresolvable
     assert description == "Compra a un manager desconocido"
 
 
-def test_build_dashboard_html_uses_the_calibrated_starting_balance_when_set():
-    # sync.py's calibrate_starting_balance backsolves the real starting balance
-    # for the current season (a board-log blind spot: season transitions can
-    # reset budgets with no corresponding event) and stores it in sync_state.
-    # The dashboard must use that figure -- not the plain 20,000,000 default --
-    # for both the reconstructed balance and the zero-movements fallback.
+def test_build_dashboard_html_always_uses_the_plain_20m_starting_balance():
+    # The reconstruction is always a plain, uniform calculation for every
+    # manager -- analytics.STARTING_BALANCE plus the net of their synced money
+    # events, with no hidden per-manager adjustment or calibration, even if a
+    # sync_state key from an older run happens to be present.
     conn = db.init_db(":memory:")
     _populate(conn)
-    db.set_sync_state(conn, "starting_balance", "18420000")
+    db.set_sync_state(conn, "owner_user_id", "1")
+    db.set_sync_state(conn, "owner_real_balance", "999")  # must NOT shift the calc
 
     output = dashboard.build_dashboard_html(conn)
 
-    # Ana: 18,420,000 + 1,000,000 (points) - 2,000,000 (purchase) = 17,420,000
-    assert "17,420,000" in output
-    # Beto has no money events at all: falls back to the calibrated starting
-    # balance, not the hardcoded 20,000,000 default.
-    assert "18,420,000 EUR" in output
-    assert "20,000,000" not in output
+    # Ana: 20,000,000 + 1,000,000 (points) - 2,000,000 (purchase) = 19,000,000
+    assert "19,000,000" in output
+    # Beto has no money events at all: falls back to the plain 20,000,000
+    # starting balance.
+    assert "20,000,000 EUR" in output
 
 
-def test_build_dashboard_html_falls_back_to_the_default_starting_balance_when_uncalibrated():
-    conn = db.init_db(":memory:")
-    _populate(conn)
-    # No sync_state["starting_balance"] set -- e.g. dashboard.py run before the
-    # first sync.py completed a calibration.
-
-    output = dashboard.build_dashboard_html(conn)
-
-    assert "19,000,000" in output  # Ana's balance off the 20,000,000 default
-
-
-def test_build_dashboard_html_marks_only_the_owners_balance_as_verified():
-    # Biwenger's "balance" privacy setting hides every manager's cash balance
-    # from the API except the logged-in account's own. sync.py records which
-    # user_id that is (owner_user_id); only that manager's row is real,
-    # verified data -- every other manager's reconstructed balance rests on the
-    # unverifiable assumption that everyone started the season with the same
-    # budget, and must be visually distinguished as an estimate, not presented
-    # with equal confidence.
+def test_build_dashboard_html_shows_the_real_balance_check_without_adjusting_the_calc():
+    # sync.py's record_real_balance_check stores the account owner's real
+    # current balance purely for a visible comparison -- the dashboard must
+    # disclose the gap against the plain reconstruction, not silently correct
+    # for it.
     conn = db.init_db(":memory:")
     _populate(conn)
     db.set_sync_state(conn, "owner_user_id", "1")  # Ana is the account owner
+    db.set_sync_state(conn, "owner_real_balance", "18700000")
 
     output = dashboard.build_dashboard_html(conn)
 
-    # Ana's row (the owner) carries the "verified" marker; Beto's (not the
-    # owner) carries the "estimated" one.
-    ana_row = re.search(r"<tr><td>\d+</td><td>Ana</td>.*?</tr>", output).group(0)
-    beto_row = re.search(r"<tr><td>\d+</td><td>Beto</td>.*?</tr>", output).group(0)
-    assert "&#10003;" in ana_row
-    assert "&asymp;" not in ana_row
-    assert "&asymp;" in beto_row
-    assert "&#10003;" not in beto_row
+    # Ana's plain reconstructed balance (19,000,000) still appears unchanged...
+    assert "19,000,000" in output
+    # ...alongside her real balance and the gap between them, disclosed.
+    assert "18,700,000" in output
+    assert "300,000" in output  # 19,000,000 - 18,700,000
 
 
-def test_build_dashboard_html_marks_everyone_estimated_when_owner_unknown():
+def test_build_dashboard_html_omits_the_real_balance_check_when_unavailable():
     conn = db.init_db(":memory:")
     _populate(conn)
-    # No sync_state["owner_user_id"] set (e.g. an older biwenger.db from before
-    # this field existed) -- nobody's balance can be claimed as verified.
+    # No sync_state["owner_real_balance"] set -- e.g. dashboard.py run before
+    # any sync, or the API couldn't report it.
 
     output = dashboard.build_dashboard_html(conn)
 
-    # Check the standings ROWS specifically, not the legend text below the
-    # table (which always mentions both symbols to explain what they mean).
-    ana_row = re.search(r"<tr><td>\d+</td><td>Ana</td>.*?</tr>", output).group(0)
-    beto_row = re.search(r"<tr><td>\d+</td><td>Beto</td>.*?</tr>", output).group(0)
-    assert "&#10003;" not in ana_row
-    assert "&#10003;" not in beto_row
-    assert "&asymp;" in ana_row
-    assert "&asymp;" in beto_row
+    assert "Comprobacion" not in output
