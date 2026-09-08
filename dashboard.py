@@ -1,6 +1,7 @@
 """Generate a self-contained HTML dashboard from biwenger.db."""
 import html
 from collections import defaultdict
+from datetime import datetime
 
 import plotly.graph_objects as go
 from plotly.offline import plot
@@ -12,16 +13,23 @@ DB_PATH = "biwenger.db"
 OUTPUT_PATH = "dashboard.html"
 
 
+def _format_date(date_int):
+    """Render a Biwenger epoch-seconds timestamp as a human-readable date."""
+    if date_int is None:
+        return ""
+    return datetime.fromtimestamp(date_int).strftime("%Y-%m-%d")
+
+
 def _balance_chart(balance_timelines, names):
     fig = go.Figure()
     for user_id, points in balance_timelines.items():
         if not points:
             continue
         fig.add_trace(go.Scatter(
-            x=[p[0] for p in points], y=[p[1] for p in points],
+            x=[_format_date(p[0]) for p in points], y=[p[1] for p in points],
             mode="lines+markers", name=names.get(user_id, str(user_id)),
         ))
-    fig.update_layout(title="Dinero disponible por manager", xaxis_title="Fecha (epoch)", yaxis_title="EUR")
+    fig.update_layout(title="Dinero disponible por manager", xaxis_title="Fecha", yaxis_title="EUR")
     return fig
 
 
@@ -31,10 +39,10 @@ def _points_chart(points_timelines, names):
         if not points:
             continue
         fig.add_trace(go.Scatter(
-            x=[p[0] for p in points], y=[p[1] for p in points],
+            x=[_format_date(p[0]) for p in points], y=[p[1] for p in points],
             mode="lines+markers", name=names.get(user_id, str(user_id)),
         ))
-    fig.update_layout(title="Puntos acumulados por manager", xaxis_title="Fecha (epoch)", yaxis_title="Puntos")
+    fig.update_layout(title="Puntos acumulados por manager", xaxis_title="Fecha", yaxis_title="Puntos")
     return fig
 
 
@@ -109,17 +117,17 @@ def _breakdown_table_html(breakdown, names):
 
 
 def _movement_description(event, names, players):
-    player_name = players.get(event["player_id"], {}).get("name") if event["player_id"] else None
+    player = analytics.player_name(players, event["player_id"])
     counterparty = names.get(event["counterparty_id"]) if event["counterparty_id"] else None
 
     if event["type"] == "roundFinished":
         return "Bonus de jornada"
     if event["type"] == "market":
-        return f"Compra de {player_name} al mercado"
+        return f"Compra de {player} al mercado"
     if event["type"] == "transfer" and event["direction"] == "income":
-        return f"Venta de {player_name} a {counterparty}" if counterparty else f"Venta de {player_name} al mercado"
+        return f"Venta de {player} a {counterparty}" if counterparty else f"Venta de {player} al mercado"
     if event["type"] == "transfer" and event["direction"] == "expense":
-        return f"Compra de {player_name} a {counterparty}"
+        return f"Compra de {player} a {counterparty}"
     return event["type"]
 
 
@@ -135,7 +143,7 @@ def _movements_table_html(events, names, players):
             sign = "+" if event["direction"] == "income" else "-"
             description = html.escape(_movement_description(event, names, players))
             rows.append(
-                f"<tr><td>{event['date']}</td><td>{description}</td>"
+                f"<tr><td>{_format_date(event['date'])}</td><td>{description}</td>"
                 f"<td>{sign}{event['amount']:,} EUR</td></tr>"
             )
         manager_name = html.escape(names.get(user_id, str(user_id)))
@@ -163,7 +171,7 @@ def build_dashboard_html(conn):
     breakdown = analytics.compute_income_breakdown(events, users)
     biggest_bonus_round = analytics.compute_biggest_bonus_round(events, rounds)
 
-    balance_fig_html = plot(_balance_chart(balance_timelines, names), output_type="div", include_plotlyjs="cdn")
+    balance_fig_html = plot(_balance_chart(balance_timelines, names), output_type="div", include_plotlyjs=True)
     points_fig_html = plot(_points_chart(points_timelines, names), output_type="div", include_plotlyjs=False)
 
     return f"""<!DOCTYPE html>
