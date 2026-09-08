@@ -209,3 +209,38 @@ def test_build_dashboard_html_omits_the_real_balance_check_when_unavailable():
     output = dashboard.build_dashboard_html(conn)
 
     assert "Comprobacion" not in output
+
+
+def test_build_dashboard_html_has_a_tab_for_each_section():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    for tab_id in ("resumen", "desglose", "movimientos", "curiosidades"):
+        assert f'id="btn-{tab_id}"' in output
+        assert f'id="tab-{tab_id}"' in output
+
+
+def test_build_dashboard_html_movements_selector_lists_every_manager():
+    # Beto has zero money events in this fixture -- he must still get a
+    # selector option and an (empty) panel, not be silently omitted.
+    conn = db.init_db(":memory:")
+    _populate(conn)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert '<option value="1">Ana (2 movimientos)</option>' in output
+    assert '<option value="2">Beto (0 movimientos)</option>' in output
+    assert 'id="manager-2"' in output
+    assert "Sin movimientos todavia." in output
+
+
+def test_build_dashboard_html_only_the_first_manager_panel_starts_active():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert 'class="manager-panel active" id="manager-1"' in output
+    assert 'class="manager-panel" id="manager-2"' in output

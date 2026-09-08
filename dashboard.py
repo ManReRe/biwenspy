@@ -12,6 +12,73 @@ import db
 DB_PATH = "biwenger.db"
 OUTPUT_PATH = "dashboard.html"
 
+STYLE = """
+:root {
+  --bg: #f4f5f8;
+  --card-bg: #ffffff;
+  --text: #1a1a2e;
+  --text-muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-light: #eef2ff;
+  --income: #16a34a;
+  --expense: #dc2626;
+  --border: #e5e7eb;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); margin: 0; padding: 24px 16px;
+}
+.container { max-width: 1080px; margin: 0 auto; }
+h1 { font-size: 1.6rem; margin: 0 0 2px; }
+.subtitle { color: var(--text-muted); margin: 0 0 20px; font-size: 0.95rem; }
+.card { background: var(--card-bg); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.card h2 { font-size: 1.1rem; margin: 0 0 14px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
+.tab-btn {
+  background: none; border: none; padding: 10px 18px; font-size: 0.95rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+.table-wrap { overflow-x: auto; }
+.amount-income { color: var(--income); font-weight: 600; }
+.amount-expense { color: var(--expense); font-weight: 600; }
+select {
+  padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.95rem;
+  margin-bottom: 16px; background: var(--card-bg); color: var(--text);
+}
+.fact-list { list-style: none; padding: 0; margin: 0; }
+.fact-list li { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+.fact-list li:last-child { border-bottom: none; }
+.disclosure {
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px 16px;
+  font-size: 0.85rem; color: #78350f; margin-top: 14px;
+}
+.manager-panel { display: none; }
+.manager-panel.active { display: block; }
+.badge { display: inline-block; background: var(--primary-light); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
+"""
+
+SCRIPT = """
+function showTab(id) {
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('tab-' + id).classList.add('active');
+  document.getElementById('btn-' + id).classList.add('active');
+}
+function showManager(userId) {
+  document.querySelectorAll('.manager-panel').forEach(function(p) { p.classList.remove('active'); });
+  var panel = document.getElementById('manager-' + userId);
+  if (panel) { panel.classList.add('active'); }
+}
+"""
+
 
 def _format_date(date_int):
     """Render a Biwenger epoch-seconds timestamp as a human-readable date."""
@@ -58,8 +125,8 @@ def _standings_table_html(standings, names, current_balances, starting_balance):
             f"<td>{row['points']}</td><td>{balance:,.0f} EUR</td></tr>"
         )
     return (
-        "<table><thead><tr><th>Pos.</th><th>Manager</th><th>Puntos</th>"
-        "<th>Dinero</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        '<div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Manager</th><th>Puntos</th>'
+        "<th>Dinero</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
     )
 
 
@@ -69,13 +136,13 @@ def _real_balance_check_html(names, owner_user_id, owner_real_balance, owner_com
     owner_name = html.escape(names.get(owner_user_id, str(owner_user_id)))
     diff = owner_computed_balance - owner_real_balance
     return (
-        "<p><small>Comprobacion (no usada para ajustar ningun calculo): el saldo real de "
+        '<div class="disclosure">Comprobacion (no usada para ajustar ningun calculo): el saldo real de '
         f"{owner_name} en Biwenger es {owner_real_balance:,} EUR; el saldo reconstruido "
         f"(20.000.000 EUR de partida + movimientos del muro) da {owner_computed_balance:,} EUR "
         f"-- una diferencia de {diff:,} EUR. Biwenger no registra ningun evento para el reparto "
         "de presupuesto en el cambio de temporada, asi que una plantilla heredada de la "
         "temporada anterior puede explicar esta diferencia sin que sea un fallo de calculo."
-        "</small></p>"
+        "</div>"
     )
 
 
@@ -114,7 +181,7 @@ def _facts_html(facts, biggest_bonus_round=None):
             f"{html.escape(biggest_bonus_round['round'])} "
             f"({biggest_bonus_round['total']:,} EUR entre todos los managers)</li>"
         )
-    return "<ul>" + "".join(items) + "</ul>" if items else "<p>Sin datos todavia.</p>"
+    return f'<ul class="fact-list">{"".join(items)}</ul>' if items else "<p>Sin datos todavia.</p>"
 
 
 def _breakdown_table_html(breakdown, names):
@@ -126,9 +193,9 @@ def _breakdown_table_html(breakdown, names):
             f"<td>{values['purchases']:,} EUR</td></tr>"
         )
     return (
-        "<table><thead><tr><th>Manager</th><th>Ingresos por puntos</th>"
+        '<div class="table-wrap"><table><thead><tr><th>Manager</th><th>Ingresos por puntos</th>'
         "<th>Ingresos por ventas</th><th>Gastos en fichajes</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
     )
 
 
@@ -156,28 +223,51 @@ def _movement_description(event, names, players):
     return event["type"]
 
 
-def _movements_table_html(events, names, players):
+def _movements_tab_html(events, names, players, users):
     by_user = defaultdict(list)
     for event in events:
         by_user[event["user_id"]].append(event)
 
-    sections = []
-    for user_id, user_events in by_user.items():
+    # Every manager gets an <option>, even one with zero movements, so the
+    # selector always lists the full roster.
+    user_ids_in_order = [u["id"] for u in users]
+    for user_id in by_user:
+        if user_id not in user_ids_in_order:
+            user_ids_in_order.append(user_id)
+
+    if not user_ids_in_order:
+        return "<p>Sin managers todavia.</p>"
+
+    options = []
+    panels = []
+    for index, user_id in enumerate(user_ids_in_order):
+        user_events = by_user.get(user_id, [])
+        manager_name = html.escape(names.get(user_id, str(user_id)))
+        options.append(
+            f'<option value="{user_id}">{manager_name} ({len(user_events)} movimientos)</option>'
+        )
+
         rows = []
         for event in sorted(user_events, key=lambda e: e["date"], reverse=True):
-            sign = "+" if event["direction"] == "income" else "-"
+            is_income = event["direction"] == "income"
+            sign = "+" if is_income else "-"
+            css_class = "amount-income" if is_income else "amount-expense"
             description = html.escape(_movement_description(event, names, players))
             rows.append(
                 f"<tr><td>{_format_date(event['date'])}</td><td>{description}</td>"
-                f"<td>{sign}{event['amount']:,} EUR</td></tr>"
+                f'<td class="{css_class}">{sign}{event["amount"]:,} EUR</td></tr>'
             )
-        manager_name = html.escape(names.get(user_id, str(user_id)))
-        sections.append(
-            f"<details><summary>{manager_name} ({len(user_events)} movimientos)</summary>"
-            "<table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Importe</th></tr></thead>"
-            f"<tbody>{''.join(rows)}</tbody></table></details>"
+        table = (
+            '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Importe</th></tr></thead>'
+            f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"3\">Sin movimientos todavia.</td></tr>'}</tbody></table></div>"
         )
-    return "".join(sections) if sections else "<p>Sin movimientos todavia.</p>"
+        active_class = " active" if index == 0 else ""
+        panels.append(f'<div class="manager-panel{active_class}" id="manager-{user_id}">{table}</div>')
+
+    select_html = (
+        f'<select id="managerSelect" onchange="showManager(this.value)">{"".join(options)}</select>'
+    )
+    return select_html + "".join(panels)
 
 
 def build_dashboard_html(conn):
@@ -215,23 +305,63 @@ def build_dashboard_html(conn):
 
     return f"""<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="utf-8"><title>Dashboard Biwenger</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard Biwenger</title>
+<style>{STYLE}</style>
+</head>
 <body>
-<h1>Dashboard financiero de la liga</h1>
-<p>Dinero de partida por manager esta temporada: {starting_balance:,} EUR</p>
+<div class="container">
+<h1>LA SECTA -- Dashboard financiero</h1>
+<p class="subtitle">Dinero de partida por manager esta temporada: {starting_balance:,} EUR</p>
+
+<div class="tabs">
+<button class="tab-btn active" id="btn-resumen" onclick="showTab('resumen')">Resumen</button>
+<button class="tab-btn" id="btn-desglose" onclick="showTab('desglose')">Desglose</button>
+<button class="tab-btn" id="btn-movimientos" onclick="showTab('movimientos')">Movimientos</button>
+<button class="tab-btn" id="btn-curiosidades" onclick="showTab('curiosidades')">Curiosidades</button>
+</div>
+
+<div class="tab-panel active" id="tab-resumen">
+<div class="card">
 <h2>Clasificacion</h2>
 {_standings_table_html(standings, names, current_balances, starting_balance)}
 {_real_balance_check_html(names, owner_user_id, owner_real_balance, owner_computed_balance)}
+</div>
+<div class="card">
 <h2>Evolucion del dinero</h2>
 {balance_fig_html}
+</div>
+<div class="card">
 <h2>Evolucion de puntos</h2>
 {points_fig_html}
+</div>
+</div>
+
+<div class="tab-panel" id="tab-desglose">
+<div class="card">
 <h2>Desglose de ingresos y gastos</h2>
 {_breakdown_table_html(breakdown, names)}
+</div>
+</div>
+
+<div class="tab-panel" id="tab-movimientos">
+<div class="card">
 <h2>Movimientos por manager</h2>
-{_movements_table_html(events, names, players)}
+{_movements_tab_html(events, names, players, users)}
+</div>
+</div>
+
+<div class="tab-panel" id="tab-curiosidades">
+<div class="card">
 <h2>Datos curiosos</h2>
 {_facts_html(facts, biggest_bonus_round)}
+</div>
+</div>
+
+</div>
+<script>{SCRIPT}</script>
 </body>
 </html>"""
 
