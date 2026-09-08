@@ -29,29 +29,49 @@ def _item_id(item):
 def sync_board(client, conn):
     """Page through the league board and store money events.
 
-    Two modes, tracked via the ``sync_state`` table (key ``board_backfill_complete``):
+    Stopping early is NOT based on whether an individual item has been seen before
+    (``board_items`` can contain items from a run that crashed partway through and
+    therefore never proved there's no gap below them). Instead it's based on a single
+    marker, ``sync_state["board_top_item_id"]``: the id of the newest item as of the
+    last time this function *fully completed* a walk (whether that walk was the
+    original backfill reaching a short/empty page, or a later steady-state run that
+    walked all the way back down to that same marker).
+
+    Two modes, tracked via ``sync_state["board_backfill_complete"]``:
 
     - Backfill not yet complete (never reached the true end of history, e.g. an earlier
       run crashed mid-walk): walk the ENTIRE board regardless of whether individual items
-      are already known. Stopping early on a "seen" item here would silently and
-      permanently abandon ever fetching older, never-synced pages below that point.
-      Re-processing already-known items is safe: inserts are idempotent.
-    - Backfill already complete (a previous run walked all the way to a short/empty
-      page): steady-state fast path, safe to stop as soon as a previously-seen item is
-      encountered, since a full walk has already proven there's no gap below it.
+      are already known. Stopping early here would silently and permanently abandon ever
+      fetching older, never-synced pages below that point. Re-processing already-known
+      items is safe: inserts are idempotent.
+    - Backfill already complete: steady-state fast path, safe to stop as soon as the
+      previous run's top-item marker is encountered again, since a full walk down to
+      that exact item has already proven there's no gap below it.
 
-    In both modes, reaching a page shorter than PAGE_SIZE (or an empty page) is the
-    natural end of the walk; if backfill wasn't already marked complete, mark it now.
+    Crucially, the marker is only written AFTER a walk fully completes (either by
+    reaching the previous marker, or by reaching a short/empty page). If this function
+    is interrupted by an exception at any point, the marker is left untouched, so the
+    next run's "previous marker" is still the one from the last genuinely complete run
+    -- it will keep walking past anything the interrupted run touched (seen or not)
+    until it either reaches that old marker or the true start of history, recovering
+    whatever gap the interrupted run left behind.
     """
     backfill_complete = db.get_sync_state(conn, "board_backfill_complete") == "true"
+    previous_top_item_id = db.get_sync_state(conn, "board_top_item_id")
+    current_top_item_id = None
     offset = 0
     while True:
         page = client.get_board_page(offset, limit=PAGE_SIZE)
 
         for item in page:
             item_id = _item_id(item)
-            if backfill_complete and db.has_board_item(conn, item_id):
+            if current_top_item_id is None:
+                current_top_item_id = item_id
+
+            if backfill_complete and previous_top_item_id is not None and item_id == previous_top_item_id:
+                db.set_sync_state(conn, "board_top_item_id", current_top_item_id)
                 return
+
             db.mark_board_item_seen(conn, item_id)
 
             parsed = board_parser.parse_board_page([item])
@@ -63,8 +83,8 @@ def sync_board(client, conn):
                 db.insert_round_points(conn, entry["round_id"], entry["user_id"], entry["points"])
 
         if len(page) < PAGE_SIZE:
-            if not backfill_complete:
-                db.set_sync_state(conn, "board_backfill_complete", "true")
+            db.set_sync_state(conn, "board_backfill_complete", "true")
+            db.set_sync_state(conn, "board_top_item_id", current_top_item_id)
             return
         offset += PAGE_SIZE
 
