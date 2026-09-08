@@ -7,6 +7,7 @@ from analytics import (
     compute_current_balances,
     compute_income_breakdown,
     compute_points_timeline,
+    compute_round_bonus_table,
 )
 
 
@@ -201,3 +202,56 @@ def test_biggest_bonus_round_sums_all_managers_per_round():
 
 def test_biggest_bonus_round_returns_none_when_no_round_finished_events():
     assert compute_biggest_bonus_round([], []) is None
+
+
+def test_round_bonus_table_returns_one_row_per_round_sorted_by_date():
+    rounds = [
+        {"id": 2, "name": "Jornada 2", "date": 200},
+        {"id": 1, "name": "Jornada 1", "date": 100},
+    ]
+    events = [
+        {"id": "a", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 1,
+         "counterparty_id": None, "player_id": None, "amount": 1_000_000, "direction": "income", "reason_json": "{}"},
+        {"id": "b", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 2,
+         "counterparty_id": None, "player_id": None, "amount": 1_200_000, "direction": "income", "reason_json": "{}"},
+        {"id": "c", "date": 200, "round_id": 2, "type": "roundFinished", "user_id": 1,
+         "counterparty_id": None, "player_id": None, "amount": 900_000, "direction": "income", "reason_json": "{}"},
+    ]
+
+    result = compute_round_bonus_table(events, rounds)
+
+    assert [r["round_id"] for r in result] == [1, 2]
+    assert result[0]["name"] == "Jornada 1"
+    assert result[0]["amounts"] == {1: 1_000_000, 2: 1_200_000}
+    assert result[1]["name"] == "Jornada 2"
+    assert result[1]["amounts"] == {1: 900_000}
+
+
+def test_round_bonus_table_ignores_non_round_finished_events():
+    rounds = [{"id": 1, "name": "Jornada 1", "date": 100}]
+    events = [
+        {"id": "a", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 1,
+         "counterparty_id": None, "player_id": None, "amount": 1_000_000, "direction": "income", "reason_json": "{}"},
+        {"id": "b", "date": 100, "round_id": None, "type": "market", "user_id": 1,
+         "counterparty_id": None, "player_id": 5, "amount": 500_000, "direction": "expense", "reason_json": None},
+    ]
+
+    result = compute_round_bonus_table(events, rounds)
+
+    assert len(result) == 1
+    assert result[0]["amounts"] == {1: 1_000_000}
+
+
+def test_round_bonus_table_falls_back_to_a_placeholder_name_for_an_unknown_round():
+    events = [
+        {"id": "a", "date": 100, "round_id": 99, "type": "roundFinished", "user_id": 1,
+         "counterparty_id": None, "player_id": None, "amount": 500_000, "direction": "income", "reason_json": "{}"},
+    ]
+
+    result = compute_round_bonus_table(events, rounds=[])
+
+    assert result == [{"round_id": 99, "name": "Jornada 99", "date": None, "amounts": {1: 500_000}}]
+
+
+def test_round_bonus_table_returns_empty_list_for_no_events():
+    assert compute_round_bonus_table([], []) == []

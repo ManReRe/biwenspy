@@ -160,6 +160,32 @@ def compute_income_breakdown(money_events, users):
     return breakdown
 
 
+def compute_round_bonus_table(money_events, rounds):
+    """Return a list of rounds (sorted by date) with each manager's jornada
+    bonus for that round: [{"round_id", "name", "date", "amounts": {user_id: amount}}].
+
+    Only roundFinished events contribute; a round with no known metadata (not
+    in `rounds`) still gets a row, with a placeholder name.
+    """
+    round_info = {r["id"]: r for r in rounds}
+    amounts_by_round = defaultdict(dict)
+    for event in money_events:
+        if event["type"] == "roundFinished" and event["round_id"] is not None:
+            amounts_by_round[event["round_id"]][event["user_id"]] = event["amount"]
+
+    rows = []
+    for round_id, amounts in amounts_by_round.items():
+        info = round_info.get(round_id, {})
+        rows.append({
+            "round_id": round_id,
+            "name": info.get("name") or f"Jornada {round_id}",
+            "date": info.get("date"),
+            "amounts": amounts,
+        })
+    rows.sort(key=lambda r: (r["date"] is None, r["date"]))
+    return rows
+
+
 def compute_biggest_bonus_round(money_events, rounds):
     """Return the round with the highest total roundFinished payout, or None."""
     round_names = {r["id"]: r["name"] for r in rounds}

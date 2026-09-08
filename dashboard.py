@@ -247,6 +247,19 @@ def _movements_tab_html(events, names, players, users):
             f'<option value="{user_id}">{manager_name} ({len(user_events)} movimientos)</option>'
         )
 
+        total_income = sum(e["amount"] for e in user_events if e["direction"] == "income")
+        total_expense = sum(e["amount"] for e in user_events if e["direction"] == "expense")
+        net = total_income - total_expense
+        net_class = "amount-income" if net >= 0 else "amount-expense"
+        net_sign = "+" if net >= 0 else ""
+        summary = (
+            '<p class="movements-summary">'
+            f"Ingresos totales: {total_income:,} EUR &nbsp;&middot;&nbsp; "
+            f"Gastos totales: {total_expense:,} EUR &nbsp;&middot;&nbsp; "
+            f'Neto por transacciones: <span class="{net_class}">{net_sign}{net:,} EUR</span>'
+            "</p>"
+        )
+
         rows = []
         for event in sorted(user_events, key=lambda e: e["date"], reverse=True):
             is_income = event["direction"] == "income"
@@ -262,12 +275,48 @@ def _movements_tab_html(events, names, players, users):
             f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"3\">Sin movimientos todavia.</td></tr>'}</tbody></table></div>"
         )
         active_class = " active" if index == 0 else ""
-        panels.append(f'<div class="manager-panel{active_class}" id="manager-{user_id}">{table}</div>')
+        panels.append(f'<div class="manager-panel{active_class}" id="manager-{user_id}">{summary}{table}</div>')
 
     select_html = (
         f'<select id="managerSelect" onchange="showManager(this.value)">{"".join(options)}</select>'
     )
     return select_html + "".join(panels)
+
+
+def _jornadas_tab_html(round_bonus_rows, standings, names):
+    if not round_bonus_rows:
+        return "<p>Sin jornadas todavia.</p>"
+
+    # Manager columns in league-standings order; defensively append anyone who
+    # somehow has a bonus but no standings row.
+    user_ids = [s["user_id"] for s in sorted(standings, key=lambda r: r["position"])]
+    for row in round_bonus_rows:
+        for user_id in row["amounts"]:
+            if user_id not in user_ids:
+                user_ids.append(user_id)
+
+    header_cells = "".join(f"<th>{html.escape(names.get(uid, str(uid)))}</th>" for uid in user_ids)
+
+    totals = defaultdict(int)
+    body_rows = []
+    for row in round_bonus_rows:
+        cells = []
+        for user_id in user_ids:
+            amount = row["amounts"].get(user_id)
+            if amount is None:
+                cells.append("<td>-</td>")
+            else:
+                totals[user_id] += amount
+                cells.append(f"<td>{amount:,} EUR</td>")
+        body_rows.append(f"<tr><td>{html.escape(row['name'])}</td>{''.join(cells)}</tr>")
+
+    total_cells = "".join(f"<td><strong>{totals.get(uid, 0):,} EUR</strong></td>" for uid in user_ids)
+    total_row = f"<tr><td><strong>Total</strong></td>{total_cells}</tr>"
+
+    return (
+        '<div class="table-wrap"><table><thead><tr><th>Jornada</th>' + header_cells + "</tr></thead>"
+        f"<tbody>{''.join(body_rows)}{total_row}</tbody></table></div>"
+    )
 
 
 def build_dashboard_html(conn):
@@ -297,6 +346,7 @@ def build_dashboard_html(conn):
     facts = analytics.compute_curious_facts(events, players, users)
     breakdown = analytics.compute_income_breakdown(events, users)
     biggest_bonus_round = analytics.compute_biggest_bonus_round(events, rounds)
+    round_bonus_rows = analytics.compute_round_bonus_table(events, rounds)
 
     balance_fig_html = plot(_balance_chart(balance_timelines, names), output_type="div", include_plotlyjs=True)
     points_fig_html = plot(_points_chart(points_timelines, names), output_type="div", include_plotlyjs=False)
@@ -319,6 +369,7 @@ def build_dashboard_html(conn):
 <div class="tabs">
 <button class="tab-btn active" id="btn-resumen" onclick="showTab('resumen')">Resumen</button>
 <button class="tab-btn" id="btn-desglose" onclick="showTab('desglose')">Desglose</button>
+<button class="tab-btn" id="btn-jornadas" onclick="showTab('jornadas')">Jornadas</button>
 <button class="tab-btn" id="btn-movimientos" onclick="showTab('movimientos')">Movimientos</button>
 <button class="tab-btn" id="btn-curiosidades" onclick="showTab('curiosidades')">Curiosidades</button>
 </div>
@@ -343,6 +394,13 @@ def build_dashboard_html(conn):
 <div class="card">
 <h2>Desglose de ingresos y gastos</h2>
 {_breakdown_table_html(breakdown, names)}
+</div>
+</div>
+
+<div class="tab-panel" id="tab-jornadas">
+<div class="card">
+<h2>Dinero ganado por jornada</h2>
+{_jornadas_tab_html(round_bonus_rows, standings, names)}
 </div>
 </div>
 

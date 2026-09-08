@@ -236,6 +236,35 @@ def test_build_dashboard_html_movements_selector_lists_every_manager():
     assert "Sin movimientos todavia." in output
 
 
+def test_build_dashboard_html_movements_tab_shows_the_net_total_per_manager():
+    # Ana: +1,000,000 (roundFinished income) - 2,000,000 (market expense) = -1,000,000 net.
+    conn = db.init_db(":memory:")
+    _populate(conn)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "-1,000,000 EUR" in output  # net (a loss) -- only this summary line formats it with a bare minus
+
+
+def test_build_dashboard_html_movements_tab_shows_positive_net_with_a_plus_sign():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 100, "round_id": None, "type": "transfer", "user_id": 1,
+        "counterparty_id": None, "player_id": 10, "amount": 5_000_000, "direction": "income",
+        "reason_json": None,
+    })
+    db.insert_money_event(conn, {
+        "id": "e2", "date": 200, "round_id": None, "type": "market", "user_id": 1,
+        "counterparty_id": None, "player_id": 11, "amount": 1_000_000, "direction": "expense",
+        "reason_json": None,
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "+4,000,000 EUR" in output  # net gain, 5,000,000 - 1,000,000
+
+
 def test_build_dashboard_html_only_the_first_manager_panel_starts_active():
     conn = db.init_db(":memory:")
     _populate(conn)
