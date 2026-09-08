@@ -94,10 +94,14 @@ def test_build_dashboard_html_does_not_load_plotly_from_a_cdn():
 
     output = dashboard.build_dashboard_html(conn)
 
-    # The chart must be self-contained: no <script src=...> pointing at an external
-    # CDN (previously plot() was called with include_plotlyjs="cdn", which produced
-    # exactly such a tag and made the dashboard depend on internet access to render).
-    assert '<script src="https://cdn.plot.ly' not in output
+    # The chart must be self-contained: no src="..." pointing at an external CDN
+    # (previously plot() was called with include_plotlyjs="cdn", which produced
+    # exactly such an attribute and made the dashboard depend on internet access to
+    # render). Note: we deliberately don't match "<script src=" here -- Plotly's real
+    # CDN output places other attributes (e.g. charset) before src= in the <script>
+    # tag, so that substring never appears verbatim even in the broken version, which
+    # would make this assertion pass regardless of whether the bug is present.
+    assert 'src="https://cdn.plot.ly' not in output
 
 
 def test_build_dashboard_html_renders_dates_as_human_readable_not_raw_epoch():
@@ -143,3 +147,16 @@ def test_movement_description_never_renders_the_literal_none_for_a_playerless_ev
     description = dashboard._movement_description(event, names={}, players={})
     assert "None" not in description
     assert description == "Compra al mercado"
+
+
+def test_movement_description_never_renders_the_literal_none_for_an_unresolvable_transfer_expense():
+    # A transfer/expense movement (a purchase from another manager) with no player and
+    # an unresolvable counterparty must not render the Python value None into the text
+    # (previously this rendered the literal string "Compra a None").
+    event = {
+        "type": "transfer", "direction": "expense", "player_id": None,
+        "counterparty_id": None,
+    }
+    description = dashboard._movement_description(event, names={}, players={})
+    assert "None" not in description
+    assert description == "Compra a un manager desconocido"

@@ -134,7 +134,9 @@ def _movement_description(event, names, players):
             return f"Venta a {counterparty}" if counterparty else "Venta al mercado"
         return f"Venta de {player} a {counterparty}" if counterparty else f"Venta de {player} al mercado"
     if event["type"] == "transfer" and event["direction"] == "expense":
-        return f"Compra de {player} a {counterparty}" if player else f"Compra a {counterparty}"
+        if not player:
+            return f"Compra a {counterparty}" if counterparty else "Compra a un manager desconocido"
+        return f"Compra de {player} a {counterparty}" if counterparty else f"Compra de {player} a un manager desconocido"
     return event["type"]
 
 

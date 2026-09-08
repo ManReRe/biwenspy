@@ -201,6 +201,54 @@ def test_sync_board_recovers_never_synced_history_after_an_interrupted_steady_st
     assert db.get_sync_state(conn, "board_top_item_id") == sync._item_id(run2_page0[0])
 
 
+def test_sync_board_writes_this_runs_own_top_item_as_the_new_marker_on_fast_path_stop():
+    """The fast-path stop (hitting the previous marker mid-page during a steady-state
+    run) must record THIS run's own newest item as the new ``board_top_item_id`` --
+    not leave the old marker in place and not record the item where it stopped. No
+    existing test exercises this specific write in a way that would fail if it were
+    dropped or written with the wrong value (e.g. the old marker, or the stopping
+    item's id).
+    """
+    conn = db.init_db(":memory:")
+
+    # Run 1: a full, uninterrupted backfill across exactly 550 items (a full page 0 of
+    # 500 plus a short page 1 of 50), so it fully backfills and reaches a short final
+    # page -- same pattern as the interrupted-steady-state test above.
+    backfill_page0 = [_market_item(date) for date in range(500)]  # dates 0-499
+    backfill_page1 = [_market_item(date) for date in range(500, 550)]  # dates 500-549
+    sync.sync_board(FakeClient(pages=[backfill_page0, backfill_page1]), conn)
+
+    assert db.get_sync_state(conn, "board_backfill_complete") == "true"
+    old_marker = db.get_sync_state(conn, "board_top_item_id")
+    assert old_marker == sync._item_id(backfill_page0[0])
+    events_before = len(db.get_all_money_events(conn))
+    assert events_before == 550
+
+    # Run 2: a NEW client whose board is 700 fresh items pushed on top of the original
+    # 550. The item that was previously the top (backfill_page0[0], now the recorded
+    # marker) sits at absolute position 700 -- NOT a page boundary -- landing at index
+    # 200 of the second page fetched at offset 500.
+    new_items = [_market_item(date) for date in range(200_000, 200_700)]  # 700 fresh items
+    page0_run2 = new_items[0:500]
+    page1_run2 = new_items[500:700] + [backfill_page0[0]]  # marker at index 200
+    client2 = FakeClient(pages=[page0_run2, page1_run2])
+
+    sync.sync_board(client2, conn)
+
+    # Fast path stops mid-page-two, at the marker, without ever requesting offset 1000.
+    assert client2.calls == [0, 500]
+
+    # Exactly the 700 fresh items were added as new money events -- the marker item
+    # itself, encountered mid-page, is not reprocessed.
+    events_after = len(db.get_all_money_events(conn))
+    assert events_after - events_before == 700
+
+    # The new marker must be THIS run's own top item (the first of the 700 pushed on
+    # top), not the old marker and not the item where the walk stopped.
+    assert db.get_sync_state(conn, "board_top_item_id") == sync._item_id(new_items[0])
+    assert db.get_sync_state(conn, "board_top_item_id") != old_marker
+
+
 def test_sync_board_keeps_paging_through_pages_with_no_money_events():
     conn = db.init_db(":memory:")
     no_money_page = [{"type": "text", "content": "hola", "date": d} for d in range(500)]
