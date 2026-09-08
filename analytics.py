@@ -54,7 +54,7 @@ def _user_name(users_by_id, user_id):
     return users_by_id.get(user_id, {}).get("name", f"Usuario {user_id}")
 
 
-def _player_name(players, player_id):
+def player_name(players, player_id):
     if player_id is None:
         return None
     return players.get(player_id, {}).get("name", f"Jugador {player_id}")
@@ -70,7 +70,7 @@ def compute_curious_facts(money_events, players, users):
         best_sale = max(sales, key=lambda e: e["amount"])
         facts["most_expensive_sale"] = {
             "user": _user_name(users_by_id, best_sale["user_id"]),
-            "player": _player_name(players, best_sale["player_id"]),
+            "player": player_name(players, best_sale["player_id"]),
             "amount": best_sale["amount"],
             "date": best_sale["date"],
         }
@@ -80,7 +80,7 @@ def compute_curious_facts(money_events, players, users):
         best_purchase = max(purchases, key=lambda e: e["amount"])
         facts["most_expensive_purchase"] = {
             "user": _user_name(users_by_id, best_purchase["user_id"]),
-            "player": _player_name(players, best_purchase["player_id"]),
+            "player": player_name(players, best_purchase["player_id"]),
             "amount": best_purchase["amount"],
             "date": best_purchase["date"],
         }
@@ -137,7 +137,7 @@ def compute_curious_facts(money_events, players, users):
         best_flip = max(flips, key=lambda f: f["profit"])
         facts["best_flip"] = {
             "user": _user_name(users_by_id, best_flip["user_id"]),
-            "player": _player_name(players, best_flip["player_id"]),
+            "player": player_name(players, best_flip["player_id"]),
             "profit": best_flip["profit"],
             "buy_amount": best_flip["buy_amount"],
             "sell_amount": best_flip["sell_amount"],
