@@ -24,6 +24,11 @@ puntos de cada manager a lo largo de la temporada, reconstruidos desde 20.000.00
    ```
 5. Abre `dashboard.html` en el navegador.
 
+### Uso rápido
+
+Una vez instaladas las dependencias, `./run.sh` hace los pasos 2-5 en un solo comando: captura la
+sesión si falta `config.json`, sincroniza, regenera el dashboard y lo abre.
+
 ## Tests
 
 ```
