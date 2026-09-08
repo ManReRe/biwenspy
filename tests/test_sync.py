@@ -260,33 +260,45 @@ def test_sync_board_keeps_paging_through_pages_with_no_money_events():
     assert len(db.get_all_money_events(conn)) == 1
 
 
-def test_record_real_balance_check_stores_owner_and_their_real_balance():
-    # This is a comparison data point only -- it must never be used to adjust
-    # any computed balance (the reconstruction always stays a plain
-    # analytics.STARTING_BALANCE plus synced events, uniformly for everyone).
+def test_calibrate_starting_balance_backsolves_from_the_real_current_balance():
+    # Owner has net +300 recorded (income 500 - expense 200). Their real
+    # current balance is 38,470 -- so the season must have actually started
+    # at 38,470 - 300 = 38,170, not analytics.STARTING_BALANCE (20,000,000).
     conn = db.init_db(":memory:")
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 1, "round_id": None, "type": "market", "user_id": 1,
+        "counterparty_id": None, "player_id": 10, "amount": 200, "direction": "expense",
+        "reason_json": None,
+    })
+    db.insert_money_event(conn, {
+        "id": "e2", "date": 2, "round_id": None, "type": "transfer", "user_id": 1,
+        "counterparty_id": None, "player_id": 11, "amount": 500, "direction": "income",
+        "reason_json": None,
+    })
 
     class BalanceClient:
         def get_own_balance(self):
             return 38_470
 
-    sync.record_real_balance_check(BalanceClient(), conn, owner_user_id=1)
+    sync.calibrate_starting_balance(BalanceClient(), conn, owner_user_id=1)
 
     assert db.get_sync_state(conn, "owner_user_id") == "1"
     assert db.get_sync_state(conn, "owner_real_balance") == "38470"
+    assert db.get_sync_state(conn, "starting_balance") == "38170"
 
 
-def test_record_real_balance_check_leaves_state_untouched_when_balance_unavailable():
+def test_calibrate_starting_balance_leaves_state_untouched_when_balance_unavailable():
     conn = db.init_db(":memory:")
 
     class NoBalanceClient:
         def get_own_balance(self):
             return None
 
-    sync.record_real_balance_check(NoBalanceClient(), conn, owner_user_id=1)
+    sync.calibrate_starting_balance(NoBalanceClient(), conn, owner_user_id=1)
 
     assert db.get_sync_state(conn, "owner_user_id") is None
     assert db.get_sync_state(conn, "owner_real_balance") is None
+    assert db.get_sync_state(conn, "starting_balance") is None
 
 
 def test_sync_players_fetches_and_stores_only_referenced_players():

@@ -3,6 +3,7 @@ import hashlib
 import json
 import sys
 
+import analytics
 import board_parser
 import db
 from client import BiwengerAuthError, BiwengerClient
@@ -89,31 +90,41 @@ def sync_board(client, conn):
         offset += PAGE_SIZE
 
 
-def record_real_balance_check(client, conn, owner_user_id):
-    """Record the account owner's real current balance for an honest,
-    visible comparison against the reconstructed figure.
+def calibrate_starting_balance(client, conn, owner_user_id):
+    """Back-solve the real season-starting balance from the account owner's
+    real current balance, and store it for every manager's calculation.
 
-    This is NOT used to adjust, calibrate, or offset any computed balance --
-    every manager's balance is always exactly analytics.STARTING_BALANCE plus
-    the net of their synced money events, uniformly, so the reconstruction
-    stays a transparent, direct calculation with no hidden correction. But
     Biwenger's board has no event for a season-transition budget reset (a
-    manager keeping part of a prior season's squad, say), so the
-    reconstruction CAN differ from reality by whatever that unlogged
-    adjustment actually did. Recording the one real balance the API exposes
-    (``client.get_own_balance``, unaffected by the league's "balance" privacy
-    setting for the logged-in account) lets dashboard.py show that gap openly
-    instead of silently correcting it away.
+    manager keeping part of a prior season's squad, say), so a hardcoded
+    analytics.STARTING_BALANCE (20,000,000) can silently diverge from
+    reality -- confirmed for this league: after an exhaustive search (every
+    board event, over a dozen API endpoints, the app's own stats/value
+    history views) turned up no missing transaction, the account owner's
+    real balance still differs from the flat-20M reconstruction by a fixed
+    amount. The API exposes that owner's real current balance even though
+    the league hides every OTHER manager's (``client.get_own_balance``), so
+    that one real number is used to back-solve what the season must have
+    actually started with: real balance minus the net of every synced event
+    for that owner. That corrected figure is then applied to EVERY manager,
+    since a season-transition reset is a league-wide mechanic -- it is the
+    best available approximation for the other managers, not a verified fact
+    for them the way it is for the owner (see dashboard.py's disclosure).
 
     If the API can't report the owner's balance (e.g. they've left the
-    league), sync_state is left untouched -- dashboard.py simply omits the
-    comparison.
+    league), sync_state is left untouched -- callers fall back to
+    analytics.STARTING_BALANCE.
     """
     own_balance = client.get_own_balance()
     if own_balance is None:
         return
+
+    events = db.get_all_money_events(conn)
+    net_for_owner = analytics.compute_current_balances(events, starting_balance=0).get(owner_user_id, 0)
+    starting_balance = own_balance - net_for_owner
+
     db.set_sync_state(conn, "owner_user_id", str(owner_user_id))
     db.set_sync_state(conn, "owner_real_balance", str(own_balance))
+    db.set_sync_state(conn, "starting_balance", str(starting_balance))
 
 
 def sync_players(client, conn):
@@ -142,7 +153,7 @@ def main():
 
         sync_board(client, conn)
         sync_players(client, conn)
-        record_real_balance_check(client, conn, config["user_id"])
+        calibrate_starting_balance(client, conn, config["user_id"])
 
         for standing in client.get_standings():
             db.upsert_standing(conn, standing["id"], standing["points"], standing["position"])

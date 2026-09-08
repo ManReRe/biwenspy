@@ -162,30 +162,57 @@ def test_movement_description_never_renders_the_literal_none_for_an_unresolvable
     assert description == "Compra a un manager desconocido"
 
 
-def test_build_dashboard_html_always_uses_the_plain_20m_starting_balance():
-    # The reconstruction is always a plain, uniform calculation for every
-    # manager -- analytics.STARTING_BALANCE plus the net of their synced money
-    # events, with no hidden per-manager adjustment or calibration, even if a
-    # sync_state key from an older run happens to be present.
+def test_build_dashboard_html_uses_the_calibrated_starting_balance_when_set():
+    # sync.py's calibrate_starting_balance back-solves the real starting
+    # balance for the current season and stores it in sync_state. The
+    # dashboard must use that figure -- not the plain 20,000,000 default --
+    # for both the reconstructed balance and the zero-movements fallback.
     conn = db.init_db(":memory:")
     _populate(conn)
-    db.set_sync_state(conn, "owner_user_id", "1")
-    db.set_sync_state(conn, "owner_real_balance", "999")  # must NOT shift the calc
+    db.set_sync_state(conn, "starting_balance", "18420000")
 
     output = dashboard.build_dashboard_html(conn)
 
-    # Ana: 20,000,000 + 1,000,000 (points) - 2,000,000 (purchase) = 19,000,000
-    assert "19,000,000" in output
-    # Beto has no money events at all: falls back to the plain 20,000,000
-    # starting balance.
-    assert "20,000,000 EUR" in output
+    # Ana: 18,420,000 + 1,000,000 (points) - 2,000,000 (purchase) = 17,420,000
+    assert "17,420,000" in output
+    # Beto has no money events at all: falls back to the calibrated starting
+    # balance, not the hardcoded 20,000,000 default.
+    assert "18,420,000 EUR" in output
+    assert "20,000,000" not in output
+
+
+def test_build_dashboard_html_falls_back_to_the_default_starting_balance_when_uncalibrated():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    # No sync_state["starting_balance"] set -- e.g. dashboard.py run before
+    # the first sync.py completed a calibration.
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "19,000,000" in output  # Ana's balance off the 20,000,000 default
+
+
+def test_build_dashboard_html_confirms_an_exact_match_when_calibrated_for_the_owner():
+    # When starting_balance was calibrated FROM this owner's real balance,
+    # their reconstructed figure matches exactly (diff == 0) -- the
+    # disclosure must say so, not describe a gap that no longer exists.
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    db.set_sync_state(conn, "starting_balance", "18420000")
+    db.set_sync_state(conn, "owner_user_id", "1")  # Ana is the account owner
+    db.set_sync_state(conn, "owner_real_balance", "17420000")  # matches her computed balance
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "coincide exacto" in output
+    assert "17,420,000 EUR" in output
 
 
 def test_build_dashboard_html_shows_the_real_balance_check_without_adjusting_the_calc():
-    # sync.py's record_real_balance_check stores the account owner's real
-    # current balance purely for a visible comparison -- the dashboard must
-    # disclose the gap against the plain reconstruction, not silently correct
-    # for it.
+    # When owner_real_balance is recorded but starting_balance was NOT
+    # calibrated (e.g. an older sync, or calibration not yet applied), the
+    # dashboard must disclose the resulting gap against the plain
+    # reconstruction, not silently correct for it.
     conn = db.init_db(":memory:")
     _populate(conn)
     db.set_sync_state(conn, "owner_user_id", "1")  # Ana is the account owner

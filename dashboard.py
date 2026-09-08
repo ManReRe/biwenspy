@@ -130,15 +130,28 @@ def _standings_table_html(standings, names, current_balances, starting_balance):
     )
 
 
-def _real_balance_check_html(names, owner_user_id, owner_real_balance, owner_computed_balance):
+def _real_balance_check_html(names, owner_user_id, owner_real_balance, owner_computed_balance, starting_balance):
     if owner_user_id is None or owner_real_balance is None:
         return ""
     owner_name = html.escape(names.get(owner_user_id, str(owner_user_id)))
     diff = owner_computed_balance - owner_real_balance
+
+    if diff == 0:
+        return (
+            '<div class="disclosure">Comprobacion: el dinero de partida '
+            f"({starting_balance:,} EUR) esta calibrado contra el saldo real de {owner_name} en "
+            f"Biwenger -- su saldo reconstruido coincide exacto: {owner_computed_balance:,} EUR. "
+            "Para el resto de managers esa misma cifra de partida es la mejor aproximacion "
+            "disponible, no un dato verificado: Biwenger no deja consultar el saldo de nadie mas "
+            "que la cuenta autenticada, ni registra ningun evento para el reparto de presupuesto "
+            "en el cambio de temporada."
+            "</div>"
+        )
+
     return (
         '<div class="disclosure">Comprobacion (no usada para ajustar ningun calculo): el saldo real de '
         f"{owner_name} en Biwenger es {owner_real_balance:,} EUR; el saldo reconstruido "
-        f"(20.000.000 EUR de partida + movimientos del muro) da {owner_computed_balance:,} EUR "
+        f"({starting_balance:,} EUR de partida + movimientos del muro) da {owner_computed_balance:,} EUR "
         f"-- una diferencia de {diff:,} EUR. Biwenger no registra ningun evento para el reparto "
         "de presupuesto en el cambio de temporada, asi que una plantilla heredada de la "
         "temporada anterior puede explicar esta diferencia sin que sea un fallo de calculo."
@@ -328,13 +341,17 @@ def build_dashboard_html(conn):
     standings = db.get_standings(conn)
     players = db.get_players(conn)
 
-    # Always a plain, uniform calculation for every manager -- 20,000,000 EUR
-    # of starting balance plus the net of their synced money events, with no
-    # hidden per-manager adjustment. See _real_balance_check_html for why this
-    # can still differ slightly from a manager's real balance (an unlogged
-    # season-transition squad carryover, most likely) and how that's disclosed
-    # rather than silently corrected.
-    starting_balance = analytics.STARTING_BALANCE
+    # sync.py's calibrate_starting_balance back-solves the real season-starting
+    # balance from the account owner's real current balance (Biwenger's board
+    # has no event for the season-transition budget reset, so a hardcoded
+    # 20,000,000 can silently diverge from reality -- confirmed for this
+    # league). That calibrated figure is applied uniformly to every manager;
+    # fall back to the plain 20,000,000 default if calibration hasn't run yet
+    # (e.g. dashboard.py before any sync). See _real_balance_check_html for
+    # the disclosure of what's verified (the owner) vs. approximated (everyone
+    # else).
+    starting_balance_raw = db.get_sync_state(conn, "starting_balance")
+    starting_balance = int(starting_balance_raw) if starting_balance_raw is not None else analytics.STARTING_BALANCE
     owner_user_id_raw = db.get_sync_state(conn, "owner_user_id")
     owner_user_id = int(owner_user_id_raw) if owner_user_id_raw is not None else None
     owner_real_balance_raw = db.get_sync_state(conn, "owner_real_balance")
@@ -378,7 +395,7 @@ def build_dashboard_html(conn):
 <div class="card">
 <h2>Clasificacion</h2>
 {_standings_table_html(standings, names, current_balances, starting_balance)}
-{_real_balance_check_html(names, owner_user_id, owner_real_balance, owner_computed_balance)}
+{_real_balance_check_html(names, owner_user_id, owner_real_balance, owner_computed_balance, starting_balance)}
 </div>
 <div class="card">
 <h2>Evolucion del dinero</h2>
