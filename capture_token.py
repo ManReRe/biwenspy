@@ -37,7 +37,15 @@ def pick_league(leagues):
 
 def main():
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
+        # Use the real, installed Google Chrome (not Playwright's bundled Chromium) and
+        # disable the "AutomationControlled" flag: Google's login blocks OAuth (e.g.
+        # "Iniciar sesion con Google") from browsers it detects as automated otherwise,
+        # even for a real personal login.
+        browser = playwright.chromium.launch(
+            headless=False,
+            channel="chrome",
+            args=["--disable-blink-features=AutomationControlled"],
+        )
         page = browser.new_page()
         page.goto(LOGIN_URL)
         print("Inicia sesion en la ventana de Chrome. Esperando...")
