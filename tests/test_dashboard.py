@@ -1,3 +1,5 @@
+import re
+
 import dashboard
 import db
 
@@ -84,3 +86,60 @@ def test_build_dashboard_html_shows_starting_balance_for_manager_with_no_movemen
     # Beto hasn't traded yet, so his balance must still show the 20,000,000 EUR start,
     # not 0.
     assert "20,000,000 EUR" in output
+
+
+def test_build_dashboard_html_does_not_load_plotly_from_a_cdn():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    # The chart must be self-contained: no <script src=...> pointing at an external
+    # CDN (previously plot() was called with include_plotlyjs="cdn", which produced
+    # exactly such a tag and made the dashboard depend on internet access to render).
+    assert '<script src="https://cdn.plot.ly' not in output
+
+
+def test_build_dashboard_html_renders_dates_as_human_readable_not_raw_epoch():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    distinctive_epoch = 1_700_000_000  # 2023-11-14, chosen so it can't collide with
+    # any EUR amount (which are always comma-grouped) elsewhere in the output.
+    db.insert_money_event(conn, {
+        "id": "e3", "date": distinctive_epoch, "round_id": None, "type": "market",
+        "user_id": 1, "counterparty_id": None, "player_id": 10, "amount": 100,
+        "direction": "expense", "reason_json": None,
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert str(distinctive_epoch) not in output
+    assert dashboard._format_date(distinctive_epoch) in output
+    assert re.search(r"\d{4}-\d{2}-\d{2}", output)
+
+
+def test_build_dashboard_html_falls_back_to_jugador_placeholder_for_unknown_player():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    # player_id 999 is never registered via db.upsert_player, so it's unresolvable.
+    db.insert_money_event(conn, {
+        "id": "e3", "date": 300, "round_id": None, "type": "market", "user_id": 1,
+        "counterparty_id": None, "player_id": 999, "amount": 100, "direction": "expense",
+        "reason_json": None,
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "Jugador 999" in output
+
+
+def test_movement_description_never_renders_the_literal_none_for_a_playerless_event():
+    # A market movement with no "player" field at all (player_id is genuinely None,
+    # not merely unresolvable) must not render the Python value None into the text.
+    event = {
+        "type": "market", "direction": "expense", "player_id": None,
+        "counterparty_id": None,
+    }
+    description = dashboard._movement_description(event, names={}, players={})
+    assert "None" not in description
+    assert description == "Compra al mercado"
