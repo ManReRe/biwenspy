@@ -140,6 +140,19 @@ def test_curious_facts_best_flip_matches_buy_then_later_sell_of_same_player():
     }
 
 
+def test_curious_facts_best_flip_ignores_sale_dated_before_purchase():
+    events = [
+        _event(1, 3_000_000, "income", 100, type="transfer", player_id=10),
+        _event(1, 1_000_000, "expense", 200, type="market", player_id=10),
+    ]
+    users = [{"id": 1, "name": "Ana", "icon": ""}]
+    players = {10: {"name": "Jugador A", "team": "X"}}
+
+    facts = compute_curious_facts(events, players, users)
+
+    assert "best_flip" not in facts
+
+
 def test_curious_facts_returns_empty_dict_for_no_events():
     assert compute_curious_facts([], {}, []) == {}
 
