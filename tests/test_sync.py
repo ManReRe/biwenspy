@@ -347,7 +347,10 @@ def test_sync_players_fetches_and_stores_only_referenced_players():
     sync.sync_players(PlayersClient(), conn)
 
     assert db.get_players(conn) == {
-        10: {"name": "Jugador A", "team": "Equipo X", "position": None, "team_id": None},
+        10: {
+            "name": "Jugador A", "team": "Equipo X", "position": None, "team_id": None,
+            "price": None, "season_points": None,
+        },
     }
 
 
@@ -373,7 +376,10 @@ def test_sync_players_falls_back_to_get_player_for_ids_missing_from_the_bulk_cat
     sync.sync_players(FallbackClient(), conn)
 
     assert db.get_players(conn) == {
-        1852: {"name": "Ter Stegen", "team": None, "position": 1, "team_id": None},
+        1852: {
+            "name": "Ter Stegen", "team": None, "position": 1, "team_id": None,
+            "price": None, "season_points": None,
+        },
     }
 
 
@@ -397,7 +403,10 @@ def test_sync_players_backfills_team_id_for_an_already_known_player():
     sync.sync_players(BackfillClient(), conn)
 
     assert db.get_players(conn) == {
-        10: {"name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2},
+        10: {
+            "name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2,
+            "price": None, "season_points": None,
+        },
     }
 
 
@@ -414,7 +423,10 @@ def test_sync_players_leaves_team_id_null_when_the_catalog_still_has_no_team():
     sync.sync_players(NoTeamClient(), conn)  # must not raise, must not loop forever
 
     assert db.get_players(conn) == {
-        1852: {"name": "Ter Stegen", "team": None, "position": 1, "team_id": None},
+        1852: {
+            "name": "Ter Stegen", "team": None, "position": 1, "team_id": None,
+            "price": None, "season_points": None,
+        },
     }
 
 
@@ -434,18 +446,20 @@ def test_sync_players_skips_api_call_when_nothing_new():
     sync.sync_players(ExplodingClient(), conn)  # must not raise
 
 
-def test_sync_squads_and_form_stores_squads_and_enriches_owned_players():
+def test_sync_squads_and_form_stores_squads_and_enriches_the_whole_catalog():
     conn = db.init_db(":memory:")
 
     class SquadClient:
         def get_players(self):
             return {
                 10: {"name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2,
-                     "status": "ok", "recent_points": [3, 5]},
-                # Not owned by anyone below -- must NOT be upserted (irrelevant to
-                # any current squad, so it's left for sync_players to handle instead).
+                     "status": "ok", "status_info": None, "recent_points": [3, 5],
+                     "price": 5_000_000, "season_points": 30},
+                # Not owned by anyone below -- market-wide ranking needs the whole
+                # catalog persisted, not just squads in this league.
                 99: {"name": "Jugador Z", "team": "Equipo Z", "team_id": 9, "position": 4,
-                     "status": "ok", "recent_points": [1]},
+                     "status": "injured", "status_info": "Rotura fibrilar.", "recent_points": [1],
+                     "price": 2_000_000, "season_points": 5},
             }
 
         def get_manager_squad(self, user_id):
@@ -454,15 +468,29 @@ def test_sync_squads_and_form_stores_squads_and_enriches_owned_players():
                 2: [],
             }[user_id]
 
+        def get_next_round_fixtures(self):
+            return {7: {"opponent": "Betis", "difficulty": 40, "is_home": True}}
+
     sync.sync_squads_and_form(SquadClient(), conn, users=[{"id": 1}, {"id": 2}])
 
     assert db.get_all_squads(conn) == [
         {"user_id": 1, "player_id": 10, "price_paid": 100, "acquired_date": 5},
     ]
     assert db.get_players(conn) == {
-        10: {"name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2},
+        10: {
+            "name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2,
+            "price": 5_000_000, "season_points": 30,
+        },
+        99: {
+            "name": "Jugador Z", "team": "Equipo Z", "team_id": 9, "position": 4,
+            "price": 2_000_000, "season_points": 5,
+        },
     }
-    assert db.get_player_form(conn) == {10: {"recent_points": [3, 5], "status": "ok"}}
+    assert db.get_player_form(conn) == {
+        10: {"recent_points": [3, 5], "status": "ok", "status_info": None},
+        99: {"recent_points": [1], "status": "injured", "status_info": "Rotura fibrilar."},
+    }
+    assert db.get_team_fixtures(conn) == {7: {"opponent": "Betis", "difficulty": 40, "is_home": True}}
 
 
 def test_main_exits_cleanly_on_auth_error(tmp_path, monkeypatch):

@@ -105,10 +105,48 @@ class BiwengerClient:
                 "team_id": info.get("teamID"),
                 "position": info.get("position"),
                 "status": info.get("status", "ok"),
+                # Free-text reason for a non-"ok" status (e.g. "Molestias en el
+                # aductor. Retorno estimado: Principios de Septiembre."), or None.
+                "status_info": info.get("statusInfo"),
                 # Points from the player's most recently played rounds, oldest first.
                 "recent_points": info.get("fitness") or [],
+                # Current market price and season point total -- both confirmed live
+                # in this same response, used for a points-per-euro market ranking.
+                "price": info.get("price"),
+                "season_points": info.get("points"),
             }
         return players
+
+    def get_next_round_fixtures(self):
+        """Return {team_id: {"opponent", "difficulty", "is_home"}} for the next
+        pending round, or {} if none is scheduled.
+
+        Confirmed live: /competitions/la-liga/data's activeEvents carries the
+        upcoming round's fixtures, each team side tagged with a 0-100
+        "difficulty.rating" (higher = harder matchup for that team, derived by
+        Biwenger from the two sides' standings/home-away/form/goal-diff gap --
+        e.g. Real Madrid at home to a bottom-table side rates low, that same
+        side away at Real Madrid rates high). Requested separately from
+        get_players() (same endpoint) so each client method stays independently
+        testable, at the cost of one extra call per sync.
+        """
+        data = self._get("/competitions/la-liga/data", params={"lang": "es", "score": "5"})
+        fixtures = {}
+        for event in data.get("activeEvents", []):
+            if event.get("type") != "round" or event.get("status") != "pending":
+                continue
+            for game in event.get("games", []):
+                for side, opponent_side in ((game.get("home"), game.get("away")),
+                                             (game.get("away"), game.get("home"))):
+                    if not side or side.get("id") is None:
+                        continue
+                    fixtures[side["id"]] = {
+                        "opponent": (opponent_side or {}).get("name"),
+                        "difficulty": (side.get("difficulty") or {}).get("rating"),
+                        "is_home": side is game.get("home"),
+                    }
+            break  # only the next pending round
+        return fixtures
 
     def get_player(self, player_id):
         """Return {"name", "team", "team_id", "position"} for a single player, or

@@ -69,6 +69,13 @@ CREATE TABLE IF NOT EXISTS player_form (
     points_json TEXT,
     status TEXT
 );
+
+CREATE TABLE IF NOT EXISTS team_fixtures (
+    team_id INTEGER PRIMARY KEY,
+    opponent TEXT,
+    difficulty INTEGER,
+    is_home INTEGER
+);
 """
 
 
@@ -79,6 +86,9 @@ def init_db(path):
     for statement in (
         "ALTER TABLE players ADD COLUMN position INTEGER",
         "ALTER TABLE players ADD COLUMN team_id INTEGER",
+        "ALTER TABLE players ADD COLUMN price INTEGER",
+        "ALTER TABLE players ADD COLUMN season_points INTEGER",
+        "ALTER TABLE player_form ADD COLUMN status_info TEXT",
     ):
         try:
             conn.execute(statement)
@@ -199,9 +209,25 @@ def get_players(conn):
         row["id"]: {
             "name": row["name"], "team": row["team"],
             "position": row["position"], "team_id": row["team_id"],
+            "price": row["price"], "season_points": row["season_points"],
         }
         for row in rows
     }
+
+
+def upsert_player_market(conn, id, price, season_points):
+    """Set a player's current market price and season point total, refreshed
+    for the whole La Liga catalog on every sync (not just squad/event-
+    referenced players) -- kept separate from upsert_player so a caller that
+    doesn't have this data (e.g. the single-player fallback lookup for a
+    player who has left La Liga) can't accidentally null it out."""
+    conn.execute(
+        "INSERT INTO players (id, price, season_points) VALUES (?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET price = excluded.price, "
+        "season_points = excluded.season_points",
+        (id, price, season_points),
+    )
+    conn.commit()
 
 
 def get_known_player_ids(conn):
@@ -235,14 +261,40 @@ def get_all_squads(conn):
     return [dict(row) for row in rows]
 
 
-def upsert_player_form(conn, player_id, points_json, status):
+def upsert_player_form(conn, player_id, points_json, status, status_info=None):
     conn.execute(
-        "INSERT INTO player_form (player_id, points_json, status) VALUES (?, ?, ?) "
+        "INSERT INTO player_form (player_id, points_json, status, status_info) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(player_id) DO UPDATE SET points_json = excluded.points_json, "
-        "status = excluded.status",
-        (player_id, points_json, status),
+        "status = excluded.status, status_info = excluded.status_info",
+        (player_id, points_json, status, status_info),
     )
     conn.commit()
+
+
+def replace_team_fixtures(conn, fixtures):
+    """Overwrite the next-round fixture table with a fresh snapshot: {team_id:
+    {"opponent", "difficulty", "is_home"}}. Small (~20 rows) and entirely
+    superseded each sync, so a full delete+insert is simplest."""
+    conn.execute("DELETE FROM team_fixtures")
+    conn.executemany(
+        "INSERT INTO team_fixtures (team_id, opponent, difficulty, is_home) VALUES (?, ?, ?, ?)",
+        [
+            (team_id, info.get("opponent"), info.get("difficulty"), int(bool(info.get("is_home"))))
+            for team_id, info in fixtures.items()
+        ],
+    )
+    conn.commit()
+
+
+def get_team_fixtures(conn):
+    rows = conn.execute("SELECT * FROM team_fixtures").fetchall()
+    return {
+        row["team_id"]: {
+            "opponent": row["opponent"], "difficulty": row["difficulty"],
+            "is_home": bool(row["is_home"]),
+        }
+        for row in rows
+    }
 
 
 def get_player_form(conn):
@@ -251,6 +303,7 @@ def get_player_form(conn):
         row["player_id"]: {
             "recent_points": json.loads(row["points_json"]) if row["points_json"] else [],
             "status": row["status"],
+            "status_info": row["status_info"],
         }
         for row in rows
     }

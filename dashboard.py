@@ -152,6 +152,24 @@ TRANSLATIONS = {
         "update_timeout": "Esta tardando mas de lo normal -- comprueba la pestana Actions del repositorio.",
         "update_error": "No se pudo lanzar la actualizacion. Intentalo de nuevo en un momento.",
         "last_updated_label": "Ultima actualizacion: {datetime} UTC",
+        "status_injured": "Lesionado",
+        "status_doubt": "Duda",
+        "status_sanctioned": "Sancionado",
+        "status_discarded": "Descartado",
+        "status_unknown": "Baja",
+        "fixture_easy": "Facil",
+        "fixture_medium": "Media",
+        "fixture_hard": "Dificil",
+        "th_fixture": "Proximo rival",
+        "th_market_price": "Precio",
+        "th_season_points": "Puntos temporada",
+        "th_efficiency": "Puntos/Millon",
+        "h3_market_efficiency": "Mejores fichajes por relacion calidad-precio",
+        "market_efficiency_disclosure": (
+            "Ranking de todo el catalogo de La Liga por puntos de la temporada entre precio actual -- "
+            "describe rendimiento real ya conseguido, no predice el rendimiento futuro de nadie."
+        ),
+        "owned_by_label": "En tu liga: {name}",
     },
     "en": {
         "doc_title": "Biwenger Dashboard",
@@ -285,6 +303,24 @@ TRANSLATIONS = {
         "update_timeout": "This is taking longer than usual -- check the repository's Actions tab.",
         "update_error": "Couldn't start the update. Try again in a moment.",
         "last_updated_label": "Last updated: {datetime} UTC",
+        "status_injured": "Injured",
+        "status_doubt": "Doubtful",
+        "status_sanctioned": "Suspended",
+        "status_discarded": "Discarded",
+        "status_unknown": "Unavailable",
+        "fixture_easy": "Easy",
+        "fixture_medium": "Medium",
+        "fixture_hard": "Hard",
+        "th_fixture": "Next opponent",
+        "th_market_price": "Price",
+        "th_season_points": "Season points",
+        "th_efficiency": "Points/Million",
+        "h3_market_efficiency": "Best value signings",
+        "market_efficiency_disclosure": (
+            "Ranking of the whole La Liga catalog by season points per current price -- "
+            "describes real output already achieved, not a prediction of anyone's future performance."
+        ),
+        "owned_by_label": "In your league: {name}",
     },
 }
 
@@ -407,6 +443,18 @@ select {
 .manager-panel { display: none; }
 .manager-panel.active { display: block; }
 .badge { display: inline-block; background: var(--primary-light); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
+.status-badge {
+  display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 0.75rem;
+  font-weight: 600; margin-left: 6px; cursor: help;
+}
+.status-badge.status-doubt { background: rgba(217, 119, 6, 0.18); color: #fbbf24; }
+.status-badge.status-injured, .status-badge.status-sanctioned { background: rgba(248, 113, 113, 0.18); color: var(--expense); }
+.status-badge.status-discarded, .status-badge.status-unknown { background: rgba(139, 147, 163, 0.18); color: var(--text-muted); }
+.fixture-badge { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 0.75rem; font-weight: 600; }
+.fixture-badge.fixture-easy { background: rgba(52, 211, 153, 0.18); color: var(--income); }
+.fixture-badge.fixture-medium { background: rgba(217, 119, 6, 0.18); color: #fbbf24; }
+.fixture-badge.fixture-hard { background: rgba(248, 113, 113, 0.18); color: var(--expense); }
+.fixture-opponent { color: var(--text-muted); font-size: 0.85rem; margin-left: 6px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cell-best { background: var(--primary-light); border-radius: 6px; font-weight: 700; }
 .avatar {
@@ -1012,7 +1060,46 @@ def _position_label_html(position):
     return f'<span {_i18n_attr(key)}>{_t(key)}</span>'
 
 
-def _squads_tab_html(squad_table, names, icons, users):
+STATUS_LABEL_KEYS = {
+    "injured": "status_injured", "doubt": "status_doubt",
+    "sanctioned": "status_sanctioned", "discarded": "status_discarded",
+}
+
+
+def _status_badge_html(status, status_info):
+    """Small colored pill for a non-"ok" player status (injured/doubtful/
+    suspended/...), with the real Biwenger-provided reason as a hover
+    tooltip. Empty string for a fit player -- most of them."""
+    if not status or status == "ok":
+        return ""
+    key = STATUS_LABEL_KEYS.get(status, "status_unknown")
+    title = f' title="{html.escape(status_info)}"' if status_info else ""
+    css_status = html.escape(status)
+    return f'<span class="status-badge status-{css_status}"{title} {_i18n_attr(key)}>{_t(key)}</span>'
+
+
+def _fixture_badge_html(team_id, team_fixtures):
+    """Next-matchday difficulty pill (easy/medium/hard) plus the opponent's
+    name, from the team's next-round entry in team_fixtures. Empty string
+    when there's no known team or no scheduled next round."""
+    fixture = team_fixtures.get(team_id) if team_id else None
+    if not fixture or fixture.get("difficulty") is None:
+        return ""
+    rating = fixture["difficulty"]
+    if rating <= 33:
+        key, css_class = "fixture_easy", "fixture-easy"
+    elif rating <= 66:
+        key, css_class = "fixture_medium", "fixture-medium"
+    else:
+        key, css_class = "fixture_hard", "fixture-hard"
+    opponent = html.escape(fixture.get("opponent") or "?")
+    return (
+        f'<span class="fixture-badge {css_class}" {_i18n_attr(key)}>{_t(key)}</span>'
+        f'<span class="fixture-opponent">vs {opponent}</span>'
+    )
+
+
+def _squads_tab_html(squad_table, names, icons, users, player_form):
     user_ids_in_order = [u["id"] for u in users]
     for user_id in squad_table:
         if user_id not in user_ids_in_order:
@@ -1041,9 +1128,11 @@ def _squads_tab_html(squad_table, names, icons, users):
             price = f"{player['price_paid']:,} EUR" if player["price_paid"] is not None else "-"
             acquired = _format_date(player["acquired_date"]) if player["acquired_date"] else "-"
             icons_html = _player_icons_html(player["player_id"], player.get("team_id"))
+            form = player_form.get(player["player_id"], {})
+            status_badge = _status_badge_html(form.get("status"), form.get("status_info"))
             row_html.append(
                 f"<tr><td>{_position_label_html(player['position'])}</td>"
-                f"<td>{icons_html}{html.escape(player['name'])}</td>"
+                f"<td>{icons_html}{html.escape(player['name'])}{status_badge}</td>"
                 f"<td>{html.escape(player['team'] or '-')}</td>"
                 f"<td>{price}</td><td>{acquired}</td></tr>"
             )
@@ -1072,7 +1161,7 @@ def _squads_tab_html(squad_table, names, icons, users):
     return select_html + "".join(panels)
 
 
-def _lineup_rows_html(lineup, players):
+def _lineup_rows_html(lineup, players, team_fixtures):
     captain_id = lineup["captain"]["player_id"]
     rows = []
     for player in lineup["starters"]:
@@ -1080,17 +1169,18 @@ def _lineup_rows_html(lineup, players):
         team_id = players.get(player["player_id"], {}).get("team_id")
         icons_html = _player_icons_html(player["player_id"], team_id)
         name_cell = icons_html + html.escape(player["name"]) + captain_badge
+        fixture_cell = _fixture_badge_html(team_id, team_fixtures)
         rows.append(
             f"<tr><td>{_position_label_html(player['position'])}</td><td>{name_cell}</td>"
-            f"<td>{player['avg_points']:.1f}</td></tr>"
+            f"<td>{player['avg_points']:.1f}</td><td>{fixture_cell}</td></tr>"
         )
     return "".join(rows)
 
 
-def _lineup_html(lineup, players):
+def _lineup_html(lineup, players, team_fixtures):
     if lineup is None:
         return f'<p {_i18n_attr("empty_lineup")}>{_t("empty_lineup")}</p>'
-    rows_html = _lineup_rows_html(lineup, players)
+    rows_html = _lineup_rows_html(lineup, players, team_fixtures)
     formation_args = {"formation": lineup["formation"]}
     points_args = {"points": f'{lineup["total_points"]:.1f}'}
     return (
@@ -1101,6 +1191,7 @@ def _lineup_html(lineup, players):
         f'<th {_i18n_attr("th_position")}>{_t("th_position")}</th>'
         f'<th {_i18n_attr("th_player")}>{_t("th_player")}</th>'
         f'<th {_i18n_attr("th_recent_avg")}>{_t("th_recent_avg")}</th>'
+        f'<th {_i18n_attr("th_fixture")}>{_t("th_fixture")}</th>'
         "</tr></thead>"
         f"<tbody>{rows_html}</tbody></table></div>"
     )
@@ -1121,7 +1212,46 @@ def _market_profile_html(profile):
 _EMPTY_MARKET_PROFILE = {"cash": 0, "total_trades": 0, "avg_purchase": 0, "avg_sale": 0, "recent_trades": 0}
 
 
-def _next_round_tab_html(users, names, icons, squad_table, players, player_form, market_profile):
+def _market_efficiency_html(candidates, owned_by, names):
+    if not candidates:
+        return f'<p {_i18n_attr("empty_players")}>{_t("empty_players")}</p>'
+    rows = []
+    for c in candidates:
+        icons_html = _player_icons_html(c["player_id"], c["team_id"])
+        name = html.escape(c["name"] or f"Jugador {c['player_id']}")
+        owner_id = owned_by.get(c["player_id"])
+        owner_html = ""
+        if owner_id is not None:
+            owner_args = {"name": names.get(owner_id, str(owner_id))}
+            owner_html = (
+                f' <span class="badge" {_i18n_attr("owned_by_label", **owner_args)}>'
+                f'{html.escape(_t("owned_by_label", **owner_args))}</span>'
+            )
+        rows.append(
+            f"<tr><td>{_position_label_html(c['position'])}</td>"
+            f"<td>{icons_html}{name}{owner_html}</td>"
+            f"<td>{html.escape(c['team'] or '-')}</td>"
+            f"<td>{c['price']:,} EUR</td>"
+            f"<td>{c['points']}</td>"
+            f"<td>{c['efficiency']:.1f}</td></tr>"
+        )
+    return (
+        '<div class="table-wrap"><table><thead><tr>'
+        f'<th {_i18n_attr("th_position")}>{_t("th_position")}</th>'
+        f'<th {_i18n_attr("th_player")}>{_t("th_player")}</th>'
+        f'<th {_i18n_attr("th_team")}>{_t("th_team")}</th>'
+        f'<th {_i18n_attr("th_market_price")}>{_t("th_market_price")}</th>'
+        f'<th {_i18n_attr("th_season_points")}>{_t("th_season_points")}</th>'
+        f'<th {_i18n_attr("th_efficiency")}>{_t("th_efficiency")}</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def _next_round_tab_html(
+    users, names, icons, squad_table, players, player_form, market_profile,
+    team_fixtures, market_efficiency, owned_by,
+):
     user_ids_in_order = [u["id"] for u in users]
     for user_id in squad_table:
         if user_id not in user_ids_in_order:
@@ -1132,6 +1262,17 @@ def _next_round_tab_html(users, names, icons, squad_table, players, player_form,
 
     lineup_disclosure = f'<div class="disclosure" {_i18n_attr("lineup_disclosure")}>{_t("lineup_disclosure")}</div>'
     profile_disclosure = f'<div class="disclosure" {_i18n_attr("profile_disclosure")}>{_t("profile_disclosure")}</div>'
+    efficiency_disclosure = (
+        f'<div class="disclosure" {_i18n_attr("market_efficiency_disclosure")}>'
+        f'{_t("market_efficiency_disclosure")}</div>'
+    )
+    # League-wide, not per-manager: rendered once above the manager selector
+    # instead of duplicated inside every panel.
+    market_efficiency_section = (
+        f'<h3 {_i18n_attr("h3_market_efficiency")}>{_t("h3_market_efficiency")}</h3>'
+        f"{_market_efficiency_html(market_efficiency, owned_by, names)}"
+        f"{efficiency_disclosure}"
+    )
 
     options = []
     panels = []
@@ -1149,7 +1290,7 @@ def _next_round_tab_html(users, names, icons, squad_table, players, player_form,
         panel_html = (
             f"{panel_header}"
             f'<h3 {_i18n_attr("h3_recommended_lineup")}>{_t("h3_recommended_lineup")}</h3>'
-            f"{_lineup_html(lineup, players)}"
+            f"{_lineup_html(lineup, players, team_fixtures)}"
             f"{lineup_disclosure}"
             f'<h3 {_i18n_attr("h3_market_profile")}>{_t("h3_market_profile")}</h3>'
             f"{_market_profile_html(profile)}"
@@ -1165,7 +1306,7 @@ def _next_round_tab_html(users, names, icons, squad_table, players, player_form,
         '<select id="managerSelect-jornada" onchange="showManager(\'jornada\', this.value)">'
         f'{"".join(options)}</select>'
     )
-    return select_html + "".join(panels)
+    return market_efficiency_section + select_html + "".join(panels)
 
 
 def _jornadas_tab_html(round_bonus_rows, standings, names, icons):
@@ -1304,6 +1445,9 @@ def build_dashboard_html(conn):
     player_form = db.get_player_form(conn)
     squad_table = analytics.compute_squad_table(squads, players)
     market_profile = analytics.compute_market_profile(events, users, current_balances)
+    team_fixtures = db.get_team_fixtures(conn)
+    market_efficiency = analytics.compute_market_efficiency(players)
+    owned_by = {s["player_id"]: s["user_id"] for s in squads}
 
     # responsive=True makes Plotly re-fit the chart to its container on resize/rotation
     # (e.g. a phone switching between portrait and landscape) instead of staying at
@@ -1418,14 +1562,17 @@ def build_dashboard_html(conn):
 <div class="tab-panel" id="tab-plantillas">
 <div class="card">
 <h2 {_i18n_attr("h_squads")}>{_t("h_squads")}</h2>
-{_squads_tab_html(squad_table, names, icons, users)}
+{_squads_tab_html(squad_table, names, icons, users, player_form)}
 </div>
 </div>
 
 <div class="tab-panel" id="tab-jornada">
 <div class="card">
 <h2 {_i18n_attr("h_next_matchday")}>{_t("h_next_matchday")}</h2>
-{_next_round_tab_html(users, names, icons, squad_table, players, player_form, market_profile)}
+{_next_round_tab_html(
+    users, names, icons, squad_table, players, player_form, market_profile,
+    team_fixtures, market_efficiency, owned_by,
+)}
 </div>
 </div>
 

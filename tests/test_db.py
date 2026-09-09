@@ -57,9 +57,24 @@ def test_get_players_and_known_player_ids():
     conn = db.init_db(":memory:")
     db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=3, team_id=7)
     assert db.get_players(conn) == {
-        10: {"name": "Jugador A", "team": "Equipo X", "position": 3, "team_id": 7},
+        10: {
+            "name": "Jugador A", "team": "Equipo X", "position": 3, "team_id": 7,
+            "price": None, "season_points": None,
+        },
     }
     assert db.get_known_player_ids(conn) == {10}
+
+
+def test_upsert_player_market_sets_price_and_season_points_without_touching_identity():
+    conn = db.init_db(":memory:")
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=3, team_id=7)
+    db.upsert_player_market(conn, 10, 5_000_000, 42)
+    assert db.get_players(conn) == {
+        10: {
+            "name": "Jugador A", "team": "Equipo X", "position": 3, "team_id": 7,
+            "price": 5_000_000, "season_points": 42,
+        },
+    }
 
 
 def test_upsert_standing_and_get_standings_ordered_by_position():
@@ -84,5 +99,22 @@ def test_replace_squad_overwrites_previous_snapshot():
 def test_player_form_roundtrip():
     conn = db.init_db(":memory:")
     db.upsert_player_form(conn, 10, "[2, 5, 3]", "ok")
-    db.upsert_player_form(conn, 10, "[5, 3]", "injured")
-    assert db.get_player_form(conn) == {10: {"recent_points": [5, 3], "status": "injured"}}
+    db.upsert_player_form(conn, 10, "[5, 3]", "injured", "Molestias musculares.")
+    assert db.get_player_form(conn) == {
+        10: {"recent_points": [5, 3], "status": "injured", "status_info": "Molestias musculares."},
+    }
+
+
+def test_team_fixtures_roundtrip():
+    conn = db.init_db(":memory:")
+    db.replace_team_fixtures(conn, {
+        1: {"opponent": "Rayo Vallecano", "difficulty": 24, "is_home": True},
+        2: {"opponent": "Real Madrid", "difficulty": 77, "is_home": False},
+    })
+    assert db.get_team_fixtures(conn) == {
+        1: {"opponent": "Rayo Vallecano", "difficulty": 24, "is_home": True},
+        2: {"opponent": "Real Madrid", "difficulty": 77, "is_home": False},
+    }
+    # A full replace, not an append -- the previous snapshot disappears entirely.
+    db.replace_team_fixtures(conn, {3: {"opponent": "Betis", "difficulty": 50, "is_home": True}})
+    assert db.get_team_fixtures(conn) == {3: {"opponent": "Betis", "difficulty": 50, "is_home": True}}

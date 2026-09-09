@@ -6,6 +6,7 @@ from analytics import (
     compute_curious_facts,
     compute_current_balances,
     compute_income_breakdown,
+    compute_market_efficiency,
     compute_market_profile,
     compute_points_timeline,
     compute_round_bonus_table,
@@ -374,3 +375,33 @@ def test_market_profile_includes_users_with_no_trades():
     profile = compute_market_profile([], users=[{"id": 1}], current_balances={})
 
     assert profile == {1: {"cash": 0, "total_trades": 0, "avg_purchase": 0, "avg_sale": 0, "recent_trades": 0}}
+
+
+def test_market_efficiency_ranks_by_points_per_million_and_caps_at_top_n():
+    players = {
+        1: {"name": "Barato bueno", "team": "X", "team_id": 1, "position": 3,
+            "price": 2_000_000, "season_points": 40},  # 20 pts/M
+        2: {"name": "Caro flojo", "team": "Y", "team_id": 2, "position": 4,
+            "price": 40_000_000, "season_points": 20},  # 0.5 pts/M
+        3: {"name": "Sin precio", "team": "Z", "team_id": 3, "position": 2,
+            "price": None, "season_points": 10},  # excluded: no price
+        4: {"name": "Sin puntos", "team": "Z", "team_id": 3, "position": 2,
+            "price": 3_000_000, "season_points": 0},  # excluded: no points
+    }
+
+    result = compute_market_efficiency(players, top_n=1)
+
+    assert len(result) == 1
+    assert result[0]["player_id"] == 1
+    assert result[0]["efficiency"] == 20.0
+
+
+def test_market_efficiency_excludes_players_below_min_price():
+    # A minimum-price player who scored one lucky point would otherwise dwarf
+    # everyone else's ratio and dominate the ranking meaninglessly.
+    players = {
+        1: {"name": "Ganga irreal", "team": "X", "team_id": 1, "position": 3,
+            "price": 50_000, "season_points": 1},
+    }
+
+    assert compute_market_efficiency(players, min_price=1_000_000) == []

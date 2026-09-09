@@ -322,6 +322,37 @@ def recommend_lineup(squad_player_ids, players, player_form):
     return best
 
 
+def compute_market_efficiency(players, top_n=15, min_price=1_000_000):
+    """Return the top `top_n` La Liga players ranked by season points per
+    million euros of current price, across the WHOLE catalog (not just
+    squads in this league).
+
+    This describes real season-to-date output relative to cost -- a signal
+    for spotting undervalued transfer targets, not a prediction of future
+    points. Players below `min_price` are excluded: a handful of
+    minimum-price players who got a lucky single point make the ratio
+    meaningless (e.g. 1 point on a 100k price dwarfs everyone else).
+    """
+    candidates = []
+    for player_id, info in players.items():
+        price = info.get("price")
+        points = info.get("season_points")
+        if not price or price < min_price or not points or points <= 0:
+            continue
+        candidates.append({
+            "player_id": player_id,
+            "name": info.get("name"),
+            "team": info.get("team"),
+            "team_id": info.get("team_id"),
+            "position": info.get("position"),
+            "price": price,
+            "points": points,
+            "efficiency": points / (price / 1_000_000),
+        })
+    candidates.sort(key=lambda c: c["efficiency"], reverse=True)
+    return candidates[:top_n]
+
+
 def compute_market_profile(money_events, users, current_balances, now=None):
     """Return {user_id: {"cash", "total_trades", "avg_purchase", "avg_sale",
     "recent_trades"}}, one entry per manager, describing their REAL past

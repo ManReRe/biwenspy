@@ -443,6 +443,62 @@ def test_movement_without_a_player_shows_no_player_icons():
     assert '<span class="player-icons">' not in output
 
 
+def test_squads_tab_shows_injury_status_badge_with_reason_as_tooltip():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=2)
+    db.replace_squad(conn, 1, [{"player_id": 10, "price_paid": 100, "acquired_date": 5}])
+    db.upsert_player_form(conn, 10, "[]", "injured", "Rotura fibrilar. Vuelta: octubre.")
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert 'class="status-badge status-injured"' in output
+    assert 'title="Rotura fibrilar. Vuelta: octubre."' in output
+    assert "Lesionado" in output
+
+
+def _seed_full_squad(conn, user_id):
+    """Just enough players (1 GK + 5 DF + 4 MF + 1 FW) for recommend_lineup to
+    find a feasible 5-4-1, so the lineup table actually renders a row."""
+    entries = []
+    player_id = 100
+    for position, count in ((1, 1), (2, 5), (3, 4), (4, 1)):
+        for _ in range(count):
+            db.upsert_player(conn, player_id, f"Jugador {player_id}", "Equipo X", position=position, team_id=7)
+            db.upsert_player_form(conn, player_id, "[5]", "ok")
+            entries.append({"player_id": player_id, "price_paid": 100, "acquired_date": 5})
+            player_id += 1
+    db.replace_squad(conn, user_id, entries)
+
+
+def test_next_round_tab_shows_fixture_difficulty_badge_in_lineup():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    _seed_full_squad(conn, 1)
+    db.replace_team_fixtures(conn, {7: {"opponent": "Betis", "difficulty": 80, "is_home": True}})
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert 'class="fixture-badge fixture-hard"' in output
+    assert "Dificil" in output
+    assert "vs Betis" in output
+
+
+def test_next_round_tab_shows_market_efficiency_ranking_with_league_owner():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.upsert_player(conn, 10, "Ganga", "Equipo X", position=3, team_id=7)
+    db.upsert_player_market(conn, 10, 2_000_000, 40)  # 20 pts/M
+    db.replace_squad(conn, 1, [{"player_id": 10, "price_paid": 100, "acquired_date": 5}])
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "Mejores fichajes por relacion calidad-precio" in output
+    assert "Ganga" in output
+    assert "20.0" in output
+    assert "En tu liga: Ana" in output
+
+
 def test_login_gate_hides_the_dashboard_behind_a_password_form():
     conn = db.init_db(":memory:")
     _populate(conn)

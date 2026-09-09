@@ -190,31 +190,35 @@ def sync_players(client, conn):
 
 
 def sync_squads_and_form(client, conn, users):
-    """Snapshot every manager's current squad, plus each owned player's identity
-    (name/team/position) and recent form (points/status).
+    """Snapshot every manager's current squad, plus the identity/price/form of
+    EVERY player in the current La Liga catalog (not just owned ones) and the
+    next round's per-team fixture difficulty.
 
     Unlike sync_players (which only backfills players referenced by a money
     event), a player kept since before the tracked history has no purchase
     event at all -- this is the only place their name/team/position gets
     stored, since it reads the live squad directly instead of the board log.
+    Syncing the whole catalog (not just owned_ids) is what makes a market-wide
+    points-per-euro ranking possible -- a manager's best transfer target is
+    rarely someone already on a squad in this league.
     """
     catalog = client.get_players()
-    owned_ids = set()
 
     for user in users:
         squad = client.get_manager_squad(user["id"])
         db.replace_squad(conn, user["id"], squad)
-        owned_ids.update(entry["player_id"] for entry in squad)
 
-    for player_id in owned_ids:
-        info = catalog.get(player_id)
-        if not info:
-            continue
+    for player_id, info in catalog.items():
         db.upsert_player(
             conn, player_id, info["name"],
             team=info.get("team"), position=info.get("position"), team_id=info.get("team_id"),
         )
-        db.upsert_player_form(conn, player_id, json.dumps(info["recent_points"]), info["status"])
+        db.upsert_player_market(conn, player_id, info.get("price"), info.get("season_points"))
+        db.upsert_player_form(
+            conn, player_id, json.dumps(info["recent_points"]), info["status"], info.get("status_info"),
+        )
+
+    db.replace_team_fixtures(conn, client.get_next_round_fixtures())
 
 
 def main():

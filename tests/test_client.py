@@ -65,7 +65,7 @@ def test_get_players_resolves_team_names_by_id():
             "players": {
                 "10": {
                     "id": 10, "name": "Jugador A", "teamID": 1, "position": 3,
-                    "status": "ok", "fitness": [2, 5, 3],
+                    "status": "ok", "fitness": [2, 5, 3], "price": 5_000_000, "points": 42,
                 },
             },
             "teams": {"1": {"id": 1, "name": "Equipo X"}},
@@ -75,9 +75,46 @@ def test_get_players_resolves_team_names_by_id():
     assert client.get_players() == {
         10: {
             "name": "Jugador A", "team": "Equipo X", "team_id": 1, "position": 3,
-            "status": "ok", "recent_points": [2, 5, 3],
+            "status": "ok", "status_info": None, "recent_points": [2, 5, 3],
+            "price": 5_000_000, "season_points": 42,
         },
     }
+
+
+def test_get_next_round_fixtures_maps_both_sides_by_team_id():
+    payload = {
+        "status": 200,
+        "data": {
+            "activeEvents": [
+                {
+                    "type": "round", "status": "pending",
+                    "games": [
+                        {
+                            "home": {"id": 1, "name": "Real Madrid", "difficulty": {"rating": 24}},
+                            "away": {"id": 2, "name": "Rayo Vallecano", "difficulty": {"rating": 77}},
+                        },
+                    ],
+                },
+            ],
+        },
+    }
+    client, _ = _client(FakeResponse(200, payload))
+    assert client.get_next_round_fixtures() == {
+        1: {"opponent": "Rayo Vallecano", "difficulty": 24, "is_home": True},
+        2: {"opponent": "Real Madrid", "difficulty": 77, "is_home": False},
+    }
+
+
+def test_get_next_round_fixtures_ignores_non_pending_rounds():
+    payload = {
+        "status": 200,
+        "data": {"activeEvents": [{"type": "round", "status": "finished", "games": [
+            {"home": {"id": 1, "name": "A", "difficulty": {"rating": 10}},
+             "away": {"id": 2, "name": "B", "difficulty": {"rating": 90}}},
+        ]}]},
+    }
+    client, _ = _client(FakeResponse(200, payload))
+    assert client.get_next_round_fixtures() == {}
 
 
 def test_get_player_resolves_a_currently_rostered_player():
