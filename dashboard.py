@@ -146,6 +146,10 @@ TRANSLATIONS = {
         "chart_eur_axis": "EUR",
         "chart_points_title": "Puntos acumulados por manager",
         "chart_points_axis": "Puntos",
+        "update_button": "Actualizar ahora",
+        "update_working": "Actualizando... (tarda cerca de un minuto)",
+        "update_ok": "Actualizacion en marcha. Los datos nuevos tardaran cerca de un minuto en publicarse -- recarga la pagina entonces.",
+        "update_error": "No se pudo lanzar la actualizacion. Intentalo de nuevo en un momento.",
     },
     "en": {
         "doc_title": "Biwenger Dashboard",
@@ -273,6 +277,10 @@ TRANSLATIONS = {
         "chart_eur_axis": "EUR",
         "chart_points_title": "Cumulative points per manager",
         "chart_points_axis": "Points",
+        "update_button": "Update now",
+        "update_working": "Updating... (takes about a minute)",
+        "update_ok": "Update started. The new data will take about a minute to publish -- reload the page then.",
+        "update_error": "Couldn't start the update. Try again in a moment.",
     },
 }
 
@@ -317,6 +325,14 @@ body {
 h1 { font-size: 1.6rem; margin: 0 0 2px; }
 .subtitle { color: var(--text-muted); margin: 0 0 20px; font-size: 0.95rem; }
 #langSelect { width: auto; min-width: 140px; }
+.header-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.header-actions-row { display: flex; gap: 8px; align-items: center; }
+#updateBtn {
+  padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.9rem;
+  font-weight: 600; background: var(--primary); color: #fff; cursor: pointer;
+}
+#updateBtn:disabled { opacity: 0.6; cursor: default; }
+.update-status { font-size: 0.8rem; color: var(--text-muted); max-width: 260px; text-align: right; }
 .card {
   background: var(--card-bg); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px;
   border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -460,7 +476,10 @@ function t(lang, key, args) {
   return template;
 }
 
+var currentLang = 'es';
+
 function applyLanguage(lang) {
+  currentLang = lang;
   document.querySelectorAll('[data-i18n]').forEach(function(el) {
     var key = el.getAttribute('data-i18n');
     var argsAttr = el.getAttribute('data-i18n-args');
@@ -542,6 +561,36 @@ function loginKeydown(event) {
   try { unlocked = localStorage.getItem('biwenspy_unlocked') === '1'; } catch (e) {}
   if (unlocked) { unlockDashboard(); }
 })();
+
+var TRIGGER_URL = __TRIGGER_URL_JSON__;
+
+function triggerUpdate() {
+  var btn = document.getElementById('updateBtn');
+  var status = document.getElementById('updateStatus');
+  btn.disabled = true;
+  btn.textContent = t(currentLang, 'update_working');
+  status.hidden = true;
+
+  fetch(TRIGGER_URL, { method: 'POST' })
+    .then(function(response) { return response.json().catch(function() { return {ok: false}; }); })
+    .then(function(data) {
+      status.textContent = data.ok ? t(currentLang, 'update_ok') : t(currentLang, 'update_error');
+      status.hidden = false;
+    })
+    .catch(function() {
+      status.textContent = t(currentLang, 'update_error');
+      status.hidden = false;
+    })
+    .finally(function() {
+      // The whole sync+publish cycle takes roughly a minute -- keep the button
+      // disabled for that long so a second click can't pile another run on top
+      // while the first is still running.
+      setTimeout(function() {
+        btn.disabled = false;
+        btn.textContent = t(currentLang, 'update_button');
+      }, 60000);
+    });
+}
 """
 
 
@@ -557,6 +606,12 @@ def _format_date(date_int):
 # carries browser-like Origin/Referer headers (which only matters for the API
 # client, not for an <img> tag loaded by a real browser viewing dashboard.html).
 _CDN_BASE = "https://cdn.biwenger.com/"
+
+# Cloudflare Worker relay for the "Update now" button (see cloudflare-worker/).
+# It holds a GitHub token scoped to ONLY start update-dashboard.yml on this
+# repo -- the button never touches the Biwenger token or a broad GitHub
+# credential, just this one narrow trigger endpoint.
+TRIGGER_URL = "https://steep-morning-796d.manuel-angel-reyes-resta.workers.dev/"
 
 
 def _user_avatar_url(icon):
@@ -1205,7 +1260,11 @@ def build_dashboard_html(conn):
     )
 
     owner_computed_balance = current_balances.get(owner_user_id, starting_balance)
-    script = SCRIPT_TEMPLATE.replace("__I18N_JSON__", json.dumps(TRANSLATIONS, ensure_ascii=False))
+    script = (
+        SCRIPT_TEMPLATE
+        .replace("__I18N_JSON__", json.dumps(TRANSLATIONS, ensure_ascii=False))
+        .replace("__TRIGGER_URL_JSON__", json.dumps(TRIGGER_URL))
+    )
     subtitle_args = {"amount": f"{starting_balance:,}"}
 
     return f"""<!DOCTYPE html>
@@ -1232,10 +1291,16 @@ def build_dashboard_html(conn):
 <h1 {_i18n_attr("h1")}>{_t("h1")}</h1>
 <p class="subtitle" {_i18n_attr("subtitle", **subtitle_args)}>{_t("subtitle", **subtitle_args)}</p>
 </div>
+<div class="header-actions">
+<div class="header-actions-row">
 <select id="langSelect" onchange="applyLanguage(this.value)">
 <option value="es">Espanol</option>
 <option value="en">English</option>
 </select>
+<button id="updateBtn" onclick="triggerUpdate()" {_i18n_attr("update_button")}>{_t("update_button")}</button>
+</div>
+<p class="update-status" id="updateStatus" hidden></p>
+</div>
 </div>
 
 <div class="tabs">
