@@ -410,6 +410,23 @@ select {
   th, td { padding: 8px 8px; }
   select { width: 100%; }
 }
+.login-gate {
+  min-height: 80vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.login-box {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px;
+  padding: 28px 26px; width: 100%; max-width: 320px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.login-box h2 { margin: 0 0 18px; font-size: 1.15rem; }
+.login-box input {
+  width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 0.95rem; margin-bottom: 12px;
+}
+.login-box button {
+  width: 100%; padding: 10px; border-radius: 8px; border: none; background: var(--primary);
+  color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+}
+.login-error { color: var(--expense); font-size: 0.85rem; margin: 10px 0 0; }
 """
 
 SCRIPT_TEMPLATE = """
@@ -487,6 +504,43 @@ function applyLanguage(lang) {
     document.getElementById('langSelect').value = saved;
     applyLanguage(saved);
   }
+})();
+
+// Client-side gate only: dashboard.html is a static file with no server behind
+// it, so this just hides the page from a casual visitor who stumbles on the
+// link -- the data is still sitting in this same HTML's source, so anyone who
+// views source (or reads the file from the repo, if it's public) sees it
+// without ever needing the password. Not a substitute for keeping the file
+// itself private.
+var GATE_USER = "admin";
+var GATE_PASS = "123451";
+
+function unlockDashboard() {
+  var gate = document.getElementById('loginGate');
+  var main = document.getElementById('mainContainer');
+  if (gate) { gate.style.display = 'none'; }
+  if (main) { main.style.display = 'block'; }
+}
+
+function tryLogin() {
+  var user = document.getElementById('loginUser').value;
+  var pass = document.getElementById('loginPass').value;
+  if (user === GATE_USER && pass === GATE_PASS) {
+    try { localStorage.setItem('biwenspy_unlocked', '1'); } catch (e) {}
+    unlockDashboard();
+  } else {
+    document.getElementById('loginError').hidden = false;
+  }
+}
+
+function loginKeydown(event) {
+  if (event.key === 'Enter') { tryLogin(); }
+}
+
+(function() {
+  var unlocked = false;
+  try { unlocked = localStorage.getItem('biwenspy_unlocked') === '1'; } catch (e) {}
+  if (unlocked) { unlockDashboard(); }
 })();
 """
 
@@ -1163,7 +1217,16 @@ def build_dashboard_html(conn):
 <style>{STYLE}</style>
 </head>
 <body>
-<div class="container">
+<div class="login-gate" id="loginGate">
+<div class="login-box">
+<h2>Acceso privado</h2>
+<input id="loginUser" type="text" placeholder="Usuario" autocomplete="username">
+<input id="loginPass" type="password" placeholder="Contrasena" autocomplete="current-password" onkeydown="loginKeydown(event)">
+<button onclick="tryLogin()">Entrar</button>
+<p class="login-error" id="loginError" hidden>Usuario o contrasena incorrectos.</p>
+</div>
+</div>
+<div class="container" id="mainContainer" style="display:none">
 <div class="header-row">
 <div>
 <h1 {_i18n_attr("h1")}>{_t("h1")}</h1>

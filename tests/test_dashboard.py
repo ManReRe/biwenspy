@@ -441,3 +441,17 @@ def test_movement_without_a_player_shows_no_player_icons():
     output = dashboard.build_dashboard_html(conn)
 
     assert '<span class="player-icons">' not in output
+
+
+def test_login_gate_hides_the_dashboard_behind_a_password_form():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert 'id="loginGate"' in output
+    # The real content starts hidden -- unlocking it is a client-side JS toggle,
+    # not a server-side check, so it's a casual-visitor deterrent only. The data
+    # itself is still present in this same HTML regardless (see main.py comment).
+    assert 'id="mainContainer" style="display:none"' in output
+    assert 'id="loginUser"' in output and 'id="loginPass"' in output
