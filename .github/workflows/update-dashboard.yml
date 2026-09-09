@@ -52,7 +52,8 @@ jobs:
         # Access sits in front of this deployment and blocks every request
         # until a one-time-PIN login succeeds. Requires CLOUDFLARE_API_TOKEN
         # and CLOUDFLARE_ACCOUNT_ID repo secrets -- see cloudflare-pages/README.md.
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        # (No `if:` guard: the `secrets` context isn't allowed in a step's `if:`
+        # expression -- GitHub rejects the whole workflow at dispatch time.)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
