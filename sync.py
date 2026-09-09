@@ -66,6 +66,16 @@ def sync_board(client, conn):
 
         for item in page:
             item_id = _item_id(item)
+            # A manager can pin a post to the top of the board regardless of its real
+            # date (Biwenger marks it "fixed": true) -- confirmed live. A fixed item is
+            # NOT chronologically meaningful, so it must be excluded from both the
+            # top-item marker and the stop check below; otherwise the walk would anchor
+            # on that permanently-first, never-changing item and stop immediately on
+            # every run, never seeing genuinely new items sitting right below it.
+            if item.get("fixed"):
+                db.mark_board_item_seen(conn, item_id)
+                continue
+
             if current_top_item_id is None:
                 current_top_item_id = item_id
 

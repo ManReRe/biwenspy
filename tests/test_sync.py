@@ -249,6 +249,34 @@ def test_sync_board_writes_this_runs_own_top_item_as_the_new_marker_on_fast_path
     assert db.get_sync_state(conn, "board_top_item_id") != old_marker
 
 
+FIXED_ITEM = {"type": "text", "content": "pinned", "date": 1, "fixed": True}
+
+
+def test_sync_board_ignores_a_fixed_pinned_item_when_finding_new_activity():
+    """Reproduces a real bug: a manager can pin a post to the top of the board
+    (Biwenger marks it "fixed": true), regardless of its actual date -- confirmed
+    live, where a months-old pinned post sat above same-day activity. That item
+    never changes, so if it were treated as the walk's "top" item, the marker
+    would anchor on it forever and every later run would stop immediately at
+    position 0, never seeing genuinely new items sitting right below it.
+    """
+    conn = db.init_db(":memory:")
+    sync.sync_board(FakeClient(pages=[[FIXED_ITEM, _market_item(100)]]), conn)
+    assert db.get_sync_state(conn, "board_backfill_complete") == "true"
+    marker = db.get_sync_state(conn, "board_top_item_id")
+    assert marker == sync._item_id(_market_item(100))  # NOT the fixed item's id
+    assert len(db.get_all_money_events(conn)) == 1
+
+    # The fixed item is still first (unchanged), but a brand-new event has landed
+    # just below it, on top of the previously-synced one.
+    client2 = FakeClient(pages=[[FIXED_ITEM, _market_item(200), _market_item(100)]])
+    sync.sync_board(client2, conn)
+
+    events = db.get_all_money_events(conn)
+    assert len(events) == 2
+    assert any(e["date"] == 200 for e in events)
+
+
 def test_sync_board_keeps_paging_through_pages_with_no_money_events():
     conn = db.init_db(":memory:")
     no_money_page = [{"type": "text", "content": "hola", "date": d} for d in range(500)]
