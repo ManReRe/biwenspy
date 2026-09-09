@@ -5,6 +5,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+if [ -f .venv/bin/activate ]; then
+    source .venv/bin/activate
+fi
+
 if [ ! -f config.json ]; then
     echo "No se encontró config.json — capturando sesión de Biwenger..."
     python3 capture_token.py
