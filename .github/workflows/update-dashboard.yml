@@ -36,9 +36,27 @@ jobs:
         run: python3 dashboard.py
 
       - name: Commit and push if index.html changed
+        # Transitional: still publishes to the old public GitHub Pages URL so
+        # nothing breaks while the Cloudflare Pages + Access setup (private,
+        # real login) is being verified. Remove this step once that's confirmed
+        # working and the repo goes private -- see cloudflare-pages/README.md.
         run: |
           git config user.name "biwenspy-bot"
           git config user.email "actions@users.noreply.github.com"
           git add index.html
           git diff --staged --quiet && echo "No changes." || git commit -m "Auto-update dashboard"
           git push
+
+      - name: Deploy to Cloudflare Pages
+        # Real access control lives here, not in the page itself: Cloudflare
+        # Access sits in front of this deployment and blocks every request
+        # until a one-time-PIN login succeeds. Requires CLOUDFLARE_API_TOKEN
+        # and CLOUDFLARE_ACCOUNT_ID repo secrets -- see cloudflare-pages/README.md.
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          mkdir -p dist
+          cp index.html dist/index.html
+          npx wrangler pages deploy dist --project-name=biwenspy --branch=master
