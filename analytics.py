@@ -238,9 +238,9 @@ def compute_biggest_bonus_round(money_events, rounds):
 
 
 def compute_squad_table(squads, players):
-    """Return {user_id: [{"player_id","name","team","position","price_paid",
-    "acquired_date"}, ...]}, one list per manager, sorted GK -> DF -> MF -> FW
-    then by name."""
+    """Return {user_id: [{"player_id","name","team","team_id","position",
+    "price_paid","acquired_date"}, ...]}, one list per manager, sorted
+    GK -> DF -> MF -> FW then by name."""
     by_user = defaultdict(list)
     for entry in squads:
         info = players.get(entry["player_id"], {})
@@ -248,6 +248,7 @@ def compute_squad_table(squads, players):
             "player_id": entry["player_id"],
             "name": info.get("name") or f"Jugador {entry['player_id']}",
             "team": info.get("team"),
+            "team_id": info.get("team_id"),
             "position": info.get("position"),
             "price_paid": entry["price_paid"],
             "acquired_date": entry["acquired_date"],

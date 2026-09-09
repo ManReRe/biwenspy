@@ -150,7 +150,10 @@ def sync_players(client, conn):
     for player_id in missing_ids:
         info = players.get(player_id)
         if info:
-            db.upsert_player(conn, player_id, info["name"], info["team"])
+            db.upsert_player(
+                conn, player_id, info["name"],
+                team=info.get("team"), position=info.get("position"), team_id=info.get("team_id"),
+            )
         else:
             still_missing.append(player_id)
 
@@ -162,7 +165,10 @@ def sync_players(client, conn):
     for player_id in still_missing:
         info = client.get_player(player_id)
         if info:
-            db.upsert_player(conn, player_id, info["name"], info["team"], info["position"])
+            db.upsert_player(
+                conn, player_id, info["name"],
+                team=info.get("team"), position=info.get("position"), team_id=info.get("team_id"),
+            )
 
 
 def sync_squads_and_form(client, conn, users):
@@ -186,7 +192,10 @@ def sync_squads_and_form(client, conn, users):
         info = catalog.get(player_id)
         if not info:
             continue
-        db.upsert_player(conn, player_id, info["name"], info["team"], info["position"])
+        db.upsert_player(
+            conn, player_id, info["name"],
+            team=info.get("team"), position=info.get("position"), team_id=info.get("team_id"),
+        )
         db.upsert_player_form(conn, player_id, json.dumps(info["recent_points"]), info["status"])
 
 

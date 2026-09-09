@@ -74,7 +74,7 @@ def test_get_players_resolves_team_names_by_id():
     client, _ = _client(FakeResponse(200, payload))
     assert client.get_players() == {
         10: {
-            "name": "Jugador A", "team": "Equipo X", "position": 3,
+            "name": "Jugador A", "team": "Equipo X", "team_id": 1, "position": 3,
             "status": "ok", "recent_points": [2, 5, 3],
         },
     }
@@ -86,7 +86,9 @@ def test_get_player_resolves_a_currently_rostered_player():
         "data": {"id": 8747, "name": "Moncayola", "position": 3, "team": {"id": 93, "name": "Osasuna"}},
     }
     client, _ = _client(FakeResponse(200, payload))
-    assert client.get_player(8747) == {"name": "Moncayola", "team": "Osasuna", "position": 3}
+    assert client.get_player(8747) == {
+        "name": "Moncayola", "team": "Osasuna", "team_id": 93, "position": 3,
+    }
 
 
 def test_get_player_handles_a_player_no_longer_on_any_team():
@@ -94,7 +96,9 @@ def test_get_player_handles_a_player_no_longer_on_any_team():
     # via this endpoint, but with "team": null instead of a team object.
     payload = {"status": 200, "data": {"id": 1852, "name": "Ter Stegen", "position": 1, "team": None}}
     client, _ = _client(FakeResponse(200, payload))
-    assert client.get_player(1852) == {"name": "Ter Stegen", "team": None, "position": 1}
+    assert client.get_player(1852) == {
+        "name": "Ter Stegen", "team": None, "team_id": None, "position": 1,
+    }
 
 
 def test_get_manager_squad_returns_player_id_price_and_date():

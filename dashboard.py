@@ -14,15 +14,15 @@ OUTPUT_PATH = "dashboard.html"
 
 STYLE = """
 :root {
-  --bg: #f4f5f8;
-  --card-bg: #ffffff;
-  --text: #1a1a2e;
-  --text-muted: #6b7280;
-  --primary: #4f46e5;
-  --primary-light: #eef2ff;
-  --income: #16a34a;
-  --expense: #dc2626;
-  --border: #e5e7eb;
+  --bg: #0b0e14;
+  --card-bg: #151922;
+  --text: #e8eaed;
+  --text-muted: #8b93a3;
+  --primary: #6d7bff;
+  --primary-light: rgba(109, 123, 255, 0.16);
+  --income: #34d399;
+  --expense: #f87171;
+  --border: #262b36;
 }
 * { box-sizing: border-box; }
 body {
@@ -32,7 +32,10 @@ body {
 .container { max-width: 1080px; margin: 0 auto; }
 h1 { font-size: 1.6rem; margin: 0 0 2px; }
 .subtitle { color: var(--text-muted); margin: 0 0 20px; font-size: 0.95rem; }
-.card { background: var(--card-bg); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.card {
+  background: var(--card-bg); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px;
+  border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
 .card h2 { font-size: 1.1rem; margin: 0 0 14px; }
 .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
 .tab-btn {
@@ -55,10 +58,10 @@ tr:last-child td { border-bottom: none; }
      Without this, a table wider than its card just gets cut off with no visual hint
      that there's more to see -- it looks broken rather than scrollable. */
   background:
-    linear-gradient(to right, var(--card-bg) 30%, rgba(255, 255, 255, 0)) 0 0,
-    linear-gradient(to left, var(--card-bg) 30%, rgba(255, 255, 255, 0)) 100% 0,
-    linear-gradient(to right, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0)) 0 0,
-    linear-gradient(to left, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0)) 100% 0;
+    linear-gradient(to right, var(--card-bg) 30%, rgba(0, 0, 0, 0)) 0 0,
+    linear-gradient(to left, var(--card-bg) 30%, rgba(0, 0, 0, 0)) 100% 0,
+    linear-gradient(to right, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0)) 0 0,
+    linear-gradient(to left, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0)) 100% 0;
   background-repeat: no-repeat;
   background-color: var(--card-bg);
   background-size: 32px 100%, 32px 100%, 12px 100%, 12px 100%;
@@ -79,8 +82,8 @@ select {
 .fact-list li { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
 .fact-list li:last-child { border-bottom: none; }
 .disclosure {
-  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px 16px;
-  font-size: 0.85rem; color: #78350f; margin-top: 14px;
+  background: rgba(217, 119, 6, 0.12); border: 1px solid rgba(217, 119, 6, 0.35);
+  border-radius: 10px; padding: 14px 16px; font-size: 0.85rem; color: #fbbf24; margin-top: 14px;
 }
 .manager-panel { display: none; }
 .manager-panel.active { display: block; }
@@ -94,6 +97,21 @@ select {
 .cell-best { background: var(--primary-light); border-radius: 6px; font-weight: 700; }
 .totals-row td { border-top: 2px solid var(--border); }
 .scroll-hint { color: var(--primary); font-size: 0.82rem; font-weight: 600; margin: 0 0 8px; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle;
+  margin-right: 8px; background: var(--border);
+}
+.avatar-sm { width: 22px; height: 22px; margin-right: 6px; }
+.panel-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 1.05rem;
+  font-weight: 700;
+}
+.panel-header .avatar { width: 32px; height: 32px; margin-right: 0; }
+.player-icons { display: inline-flex; align-items: center; margin-right: 8px; vertical-align: middle; }
+.player-icons .crest { width: 16px; height: 16px; margin-right: 4px; }
+.player-icons .player-photo {
+  width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: var(--border);
+}
 """
 
 SCRIPT = """
@@ -120,6 +138,53 @@ def _format_date(date_int):
     return datetime.fromtimestamp(date_int).strftime("%Y-%m-%d")
 
 
+# Base for Biwenger's public image CDN. Confirmed live: it serves user avatars,
+# player photos and team crests without authentication, as long as the request
+# carries browser-like Origin/Referer headers (which only matters for the API
+# client, not for an <img> tag loaded by a real browser viewing dashboard.html).
+_CDN_BASE = "https://cdn.biwenger.com/"
+
+
+def _user_avatar_url(icon):
+    return f"{_CDN_BASE}{icon}" if icon else None
+
+
+def _player_photo_url(player_id):
+    return f"{_CDN_BASE}i/p/{player_id}.png" if player_id else None
+
+
+def _team_crest_url(team_id):
+    return f"{_CDN_BASE}i/t/{team_id}.png" if team_id else None
+
+
+def _avatar_img_html(icon, css_class="avatar"):
+    """<img> for a manager's avatar, or "" if there's no icon on file.
+
+    Carries onerror to silently hide itself on a broken/missing image rather
+    than showing the browser's broken-image icon.
+    """
+    url = _user_avatar_url(icon)
+    if not url:
+        return ""
+    return f'<img class="{css_class}" src="{html.escape(url)}" alt="" onerror="this.style.display=\'none\'">'
+
+
+def _player_icons_html(player_id, team_id):
+    """<span> with the team crest (if known) and the player's photo, or "" for
+    a playerless event (e.g. a roundFinished bonus). Same onerror fallback as
+    _avatar_img_html -- with 500+ players it's not worth checking in advance
+    which ones actually have a photo on the CDN."""
+    if player_id is None:
+        return ""
+    crest = ""
+    if team_id:
+        crest_url = html.escape(_team_crest_url(team_id))
+        crest = f'<img class="crest" src="{crest_url}" alt="" onerror="this.style.display=\'none\'">'
+    photo_url = html.escape(_player_photo_url(player_id))
+    photo = f'<img class="player-photo" src="{photo_url}" alt="" onerror="this.style.display=\'none\'">'
+    return f'<span class="player-icons">{crest}{photo}</span>'
+
+
 def _balance_chart(balance_timelines, names):
     fig = go.Figure()
     for user_id, points in balance_timelines.items():
@@ -129,7 +194,11 @@ def _balance_chart(balance_timelines, names):
             x=[_format_date(p[0]) for p in points], y=[p[1] for p in points],
             mode="lines+markers", name=names.get(user_id, str(user_id)),
         ))
-    fig.update_layout(title="Dinero disponible por manager", xaxis_title="Fecha", yaxis_title="EUR")
+    fig.update_layout(
+        title="Dinero disponible por manager", xaxis_title="Fecha", yaxis_title="EUR",
+        template="plotly_dark", paper_bgcolor="#151922", plot_bgcolor="#151922",
+        font_color="#e8eaed",
+    )
     return fig
 
 
@@ -142,19 +211,24 @@ def _points_chart(points_timelines, names):
             x=[_format_date(p[0]) for p in points], y=[p[1] for p in points],
             mode="lines+markers", name=names.get(user_id, str(user_id)),
         ))
-    fig.update_layout(title="Puntos acumulados por manager", xaxis_title="Fecha", yaxis_title="Puntos")
+    fig.update_layout(
+        title="Puntos acumulados por manager", xaxis_title="Fecha", yaxis_title="Puntos",
+        template="plotly_dark", paper_bgcolor="#151922", plot_bgcolor="#151922",
+        font_color="#e8eaed",
+    )
     return fig
 
 
-def _standings_table_html(standings, names, current_balances, starting_balance):
+def _standings_table_html(standings, names, icons, current_balances, starting_balance):
     rows = []
     for row in standings:
+        avatar = _avatar_img_html(icons.get(row["user_id"]))
         name = html.escape(names.get(row["user_id"], str(row["user_id"])))
         # A manager with zero recorded money events hasn't traded yet, so their
         # balance is still the starting amount, not 0.
         balance = current_balances.get(row["user_id"], starting_balance)
         rows.append(
-            f"<tr><td>{row['position']}</td><td>{name}</td>"
+            f"<tr><td>{row['position']}</td><td>{avatar}{name}</td>"
             f"<td>{row['points']}</td><td>{balance:,.0f} EUR</td></tr>"
         )
     return (
@@ -270,7 +344,7 @@ def _movement_description(event, names, players, rounds_by_id):
     return event["type"]
 
 
-def _movements_tab_html(events, names, players, users, rounds_by_id, running_balances):
+def _movements_tab_html(events, names, icons, players, users, rounds_by_id, running_balances):
     by_user = defaultdict(list)
     for event in events:
         by_user[event["user_id"]].append(event)
@@ -292,6 +366,9 @@ def _movements_tab_html(events, names, players, users, rounds_by_id, running_bal
         manager_name = html.escape(names.get(user_id, str(user_id)))
         options.append(
             f'<option value="{user_id}">{manager_name} ({len(user_events)} movimientos)</option>'
+        )
+        panel_header = (
+            f'<div class="panel-header">{_avatar_img_html(icons.get(user_id))}{manager_name}</div>'
         )
 
         total_income = sum(e["amount"] for e in user_events if e["direction"] == "income")
@@ -319,11 +396,13 @@ def _movements_tab_html(events, names, players, users, rounds_by_id, running_bal
             is_income = event["direction"] == "income"
             sign = "+" if is_income else "-"
             css_class = "amount-income" if is_income else "amount-expense"
+            player_info = players.get(event["player_id"], {})
+            icons_html = _player_icons_html(event["player_id"], player_info.get("team_id"))
             description = html.escape(_movement_description(event, names, players, rounds_by_id))
             balance_after = running_balances.get(event["id"])
             balance_cell = f"{balance_after:,} EUR" if balance_after is not None else "-"
             rows.append(
-                f"<tr><td>{_format_date(event['date'])}</td><td>{description}</td>"
+                f"<tr><td>{_format_date(event['date'])}</td><td>{icons_html}{description}</td>"
                 f'<td class="{css_class}">{sign}{event["amount"]:,} EUR</td>'
                 f'<td class="amount-balance">{balance_cell}</td></tr>'
             )
@@ -337,7 +416,7 @@ def _movements_tab_html(events, names, players, users, rounds_by_id, running_bal
         active_class = " active" if index == 0 else ""
         panels.append(
             f'<div class="manager-panel{active_class}" data-prefix="movimientos" '
-            f'id="manager-movimientos-{user_id}">{summary}{table}</div>'
+            f'id="manager-movimientos-{user_id}">{panel_header}{summary}{table}</div>'
         )
 
     select_html = (
@@ -354,7 +433,7 @@ def _position_label(position):
     return POSITION_LABELS.get(position, "?")
 
 
-def _squads_tab_html(squad_table, names, users):
+def _squads_tab_html(squad_table, names, icons, users):
     user_ids_in_order = [u["id"] for u in users]
     for user_id in squad_table:
         if user_id not in user_ids_in_order:
@@ -369,14 +448,18 @@ def _squads_tab_html(squad_table, names, users):
         rows = squad_table.get(user_id, [])
         manager_name = html.escape(names.get(user_id, str(user_id)))
         options.append(f'<option value="{user_id}">{manager_name} ({len(rows)} jugadores)</option>')
+        panel_header = (
+            f'<div class="panel-header">{_avatar_img_html(icons.get(user_id))}{manager_name}</div>'
+        )
 
         row_html = []
         for player in rows:
             price = f"{player['price_paid']:,} EUR" if player["price_paid"] is not None else "-"
             acquired = _format_date(player["acquired_date"]) if player["acquired_date"] else "-"
+            icons_html = _player_icons_html(player["player_id"], player.get("team_id"))
             row_html.append(
                 f"<tr><td>{_position_label(player['position'])}</td>"
-                f"<td>{html.escape(player['name'])}</td>"
+                f"<td>{icons_html}{html.escape(player['name'])}</td>"
                 f"<td>{html.escape(player['team'] or '-')}</td>"
                 f"<td>{price}</td><td>{acquired}</td></tr>"
             )
@@ -390,7 +473,7 @@ def _squads_tab_html(squad_table, names, users):
         active_class = " active" if index == 0 else ""
         panels.append(
             f'<div class="manager-panel{active_class}" data-prefix="plantillas" '
-            f'id="manager-plantillas-{user_id}">{table}</div>'
+            f'id="manager-plantillas-{user_id}">{panel_header}{table}</div>'
         )
 
     select_html = (
@@ -441,7 +524,7 @@ def _market_profile_html(profile):
 _EMPTY_MARKET_PROFILE = {"cash": 0, "total_trades": 0, "avg_purchase": 0, "avg_sale": 0, "recent_trades": 0}
 
 
-def _next_round_tab_html(users, names, squad_table, players, player_form, market_profile):
+def _next_round_tab_html(users, names, icons, squad_table, players, player_form, market_profile):
     user_ids_in_order = [u["id"] for u in users]
     for user_id in squad_table:
         if user_id not in user_ids_in_order:
@@ -473,7 +556,11 @@ def _next_round_tab_html(users, names, squad_table, players, player_form, market
         lineup = analytics.recommend_lineup(squad_player_ids, players, player_form)
         profile = market_profile.get(user_id, _EMPTY_MARKET_PROFILE)
 
+        panel_header = (
+            f'<div class="panel-header">{_avatar_img_html(icons.get(user_id))}{manager_name}</div>'
+        )
         panel_html = (
+            f"{panel_header}"
             "<h3>Alineacion recomendada para la proxima jornada</h3>"
             f"{_lineup_html(lineup)}"
             f"{lineup_disclosure}"
@@ -494,7 +581,7 @@ def _next_round_tab_html(users, names, squad_table, players, player_form, market
     return select_html + "".join(panels)
 
 
-def _jornadas_tab_html(round_bonus_rows, standings, names):
+def _jornadas_tab_html(round_bonus_rows, standings, names, icons):
     if not round_bonus_rows:
         return "<p>Sin jornadas todavia.</p>"
 
@@ -507,7 +594,9 @@ def _jornadas_tab_html(round_bonus_rows, standings, names):
                 user_ids.append(user_id)
 
     header_cells = "".join(
-        f'<th class="num">{html.escape(names.get(uid, str(uid)))}</th>' for uid in user_ids
+        f'<th class="num">{_avatar_img_html(icons.get(uid), "avatar avatar-sm")}'
+        f'{html.escape(names.get(uid, str(uid)))}</th>'
+        for uid in user_ids
     )
 
     totals = defaultdict(int)
@@ -561,6 +650,7 @@ def _jornadas_tab_html(round_bonus_rows, standings, names):
 def build_dashboard_html(conn):
     users = db.get_users(conn)
     names = {u["id"]: u["name"] for u in users}
+    icons = {u["id"]: u.get("icon") for u in users}
     events = db.get_all_money_events(conn)
     round_points = db.get_all_round_points(conn)
     rounds = db.get_all_rounds(conn)
@@ -629,7 +719,7 @@ def build_dashboard_html(conn):
 <div class="tab-panel active" id="tab-resumen">
 <div class="card">
 <h2>Clasificacion</h2>
-{_standings_table_html(standings, names, current_balances, starting_balance)}
+{_standings_table_html(standings, names, icons, current_balances, starting_balance)}
 {_real_balance_check_html(names, owner_user_id, owner_real_balance, owner_computed_balance, starting_balance)}
 </div>
 <div class="card">
@@ -652,28 +742,28 @@ def build_dashboard_html(conn):
 <div class="tab-panel" id="tab-jornadas">
 <div class="card">
 <h2>Dinero ganado por jornada</h2>
-{_jornadas_tab_html(round_bonus_rows, standings, names)}
+{_jornadas_tab_html(round_bonus_rows, standings, names, icons)}
 </div>
 </div>
 
 <div class="tab-panel" id="tab-movimientos">
 <div class="card">
 <h2>Movimientos por manager</h2>
-{_movements_tab_html(events, names, players, users, rounds_by_id, running_balances)}
+{_movements_tab_html(events, names, icons, players, users, rounds_by_id, running_balances)}
 </div>
 </div>
 
 <div class="tab-panel" id="tab-plantillas">
 <div class="card">
 <h2>Plantilla por manager</h2>
-{_squads_tab_html(squad_table, names, users)}
+{_squads_tab_html(squad_table, names, icons, users)}
 </div>
 </div>
 
 <div class="tab-panel" id="tab-jornada">
 <div class="card">
 <h2>Recomendaciones para la proxima jornada</h2>
-{_next_round_tab_html(users, names, squad_table, players, player_form, market_profile)}
+{_next_round_tab_html(users, names, icons, squad_table, players, player_form, market_profile)}
 </div>
 </div>
 

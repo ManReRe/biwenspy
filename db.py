@@ -76,10 +76,14 @@ def init_db(path):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
-    try:
-        conn.execute("ALTER TABLE players ADD COLUMN position INTEGER")
-    except sqlite3.OperationalError:
-        pass  # column already added by a previous run
+    for statement in (
+        "ALTER TABLE players ADD COLUMN position INTEGER",
+        "ALTER TABLE players ADD COLUMN team_id INTEGER",
+    ):
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError:
+            pass  # column already added by a previous run
     conn.commit()
     return conn
 
@@ -93,12 +97,12 @@ def upsert_user(conn, id, name, icon=None):
     conn.commit()
 
 
-def upsert_player(conn, id, name, team=None, position=None):
+def upsert_player(conn, id, name, team=None, position=None, team_id=None):
     conn.execute(
-        "INSERT INTO players (id, name, team, position) VALUES (?, ?, ?, ?) "
+        "INSERT INTO players (id, name, team, position, team_id) VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET name = excluded.name, team = excluded.team, "
-        "position = excluded.position",
-        (id, name, team, position),
+        "position = excluded.position, team_id = excluded.team_id",
+        (id, name, team, position, team_id),
     )
     conn.commit()
 
@@ -192,7 +196,10 @@ def get_users(conn):
 def get_players(conn):
     rows = conn.execute("SELECT * FROM players").fetchall()
     return {
-        row["id"]: {"name": row["name"], "team": row["team"], "position": row["position"]}
+        row["id"]: {
+            "name": row["name"], "team": row["team"],
+            "position": row["position"], "team_id": row["team_id"],
+        }
         for row in rows
     }
 

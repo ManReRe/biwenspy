@@ -55,8 +55,10 @@ def test_sync_state_roundtrip():
 
 def test_get_players_and_known_player_ids():
     conn = db.init_db(":memory:")
-    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=3)
-    assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X", "position": 3}}
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=3, team_id=7)
+    assert db.get_players(conn) == {
+        10: {"name": "Jugador A", "team": "Equipo X", "position": 3, "team_id": 7},
+    }
     assert db.get_known_player_ids(conn) == {10}
 
 

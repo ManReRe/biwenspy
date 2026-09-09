@@ -380,3 +380,54 @@ def test_jornadas_tab_shows_a_scroll_hint_with_many_managers():
 
     assert '<p class="scroll-hint">' in output
     assert "Desliza la tabla" in output
+
+
+def test_standings_and_jornadas_show_the_manager_avatar_when_icon_is_known():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "i/u/1.png?v=1")
+    db.upsert_user(conn, 2, "Beto", "")  # no icon -- must degrade gracefully, not crash
+    db.upsert_standing(conn, 1, 60, 1)
+    db.upsert_standing(conn, 2, 40, 2)
+    db.upsert_round(conn, 1, "Jornada 1", 100)
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 1,
+        "counterparty_id": None, "player_id": None, "amount": 1_000_000, "direction": "income",
+        "reason_json": "{}",
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert '<img class="avatar" src="https://cdn.biwenger.com/i/u/1.png?v=1"' in output
+    assert '<img class="avatar avatar-sm" src="https://cdn.biwenger.com/i/u/1.png?v=1"' in output
+
+
+def test_movements_and_squads_show_player_photo_and_team_crest():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=2, team_id=7)
+    db.replace_squad(conn, 1, [{"player_id": 10, "price_paid": 100, "acquired_date": 5}])
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 100, "round_id": None, "type": "market", "user_id": 1,
+        "counterparty_id": None, "player_id": 10, "amount": 2_000_000, "direction": "expense",
+        "reason_json": None,
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert '<img class="player-photo" src="https://cdn.biwenger.com/i/p/10.png"' in output
+    assert '<img class="crest" src="https://cdn.biwenger.com/i/t/7.png"' in output
+
+
+def test_movement_without_a_player_shows_no_player_icons():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.upsert_round(conn, 1, "Jornada 1", 100)
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 1,
+        "counterparty_id": None, "player_id": None, "amount": 1_000_000, "direction": "income",
+        "reason_json": "{}",
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert '<span class="player-icons">' not in output
