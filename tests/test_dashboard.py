@@ -335,7 +335,34 @@ def test_next_round_tab_shows_market_profile_from_real_history():
     assert "2,000,000 EUR" in output
 
 
-def test_jornadas_tab_highlights_the_top_bonus_and_the_overall_leader():
+def test_jornadas_tab_highlights_each_managers_own_best_jornada():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.upsert_standing(conn, 1, 60, 1)
+    db.upsert_round(conn, 1, "Jornada 1", 100)
+    db.upsert_round(conn, 2, "Jornada 2", 200)
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 1,
+        "counterparty_id": None, "player_id": None, "amount": 2_000_000, "direction": "income",
+        "reason_json": "{}",
+    })
+    db.insert_money_event(conn, {
+        "id": "e2", "date": 200, "round_id": 2, "type": "roundFinished", "user_id": 1,
+        "counterparty_id": None, "player_id": None, "amount": 500_000, "direction": "income",
+        "reason_json": "{}",
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    # Ana's own best jornada (2,000,000) is highlighted; her worse one (500,000) isn't.
+    assert '<td class="num cell-best">2,000,000 EUR</td>' in output
+    assert '<td class="num">500,000 EUR</td>' in output
+    assert 'id="manager-jornadas-1"' in output
+    assert "Total ganado por puntos" in output
+    assert "<strong>2,500,000 EUR</strong>" in output
+
+
+def test_jornadas_tab_season_summary_ranks_managers_and_badges_the_leader():
     conn = db.init_db(":memory:")
     db.upsert_user(conn, 1, "Ana", "")
     db.upsert_user(conn, 2, "Beto", "")
@@ -355,31 +382,8 @@ def test_jornadas_tab_highlights_the_top_bonus_and_the_overall_leader():
 
     output = dashboard.build_dashboard_html(conn)
 
-    # Ana's 2,000,000 is the jornada's top bonus -- highlighted; Beto's 500,000 isn't.
-    assert '<td class="num cell-best">2,000,000 EUR</td>' in output
-    assert '<td class="num">500,000 EUR</td>' in output
-    # Ana also leads the season total, so her total-row cell carries the badge.
+    assert "Resumen de la temporada" in output
     assert "<strong>2,000,000 EUR</strong> <span class=\"badge\">Lider</span>" in output
-    # Only 2 managers: the table fits without scrolling, so no hint is needed.
-    assert '<p class="scroll-hint">' not in output
-
-
-def test_jornadas_tab_shows_a_scroll_hint_with_many_managers():
-    conn = db.init_db(":memory:")
-    db.upsert_round(conn, 1, "Jornada 1", 100)
-    for user_id in range(1, 7):  # 6 managers -- wide enough to need horizontal scroll
-        db.upsert_user(conn, user_id, f"Manager {user_id}", "")
-        db.upsert_standing(conn, user_id, 0, user_id)
-        db.insert_money_event(conn, {
-            "id": f"e{user_id}", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": user_id,
-            "counterparty_id": None, "player_id": None, "amount": 100_000, "direction": "income",
-            "reason_json": "{}",
-        })
-
-    output = dashboard.build_dashboard_html(conn)
-
-    assert '<p class="scroll-hint">' in output
-    assert "Desliza la tabla" in output
 
 
 def test_standings_and_jornadas_show_the_manager_avatar_when_icon_is_known():
@@ -397,8 +401,8 @@ def test_standings_and_jornadas_show_the_manager_avatar_when_icon_is_known():
 
     output = dashboard.build_dashboard_html(conn)
 
-    assert '<img class="avatar" src="https://cdn.biwenger.com/i/u/1.png?v=1"' in output
-    assert '<img class="avatar avatar-sm" src="https://cdn.biwenger.com/i/u/1.png?v=1"' in output
+    avatar_img = '<img class="avatar" src="https://cdn.biwenger.com/i/u/1.png?v=1"'
+    assert output.count(avatar_img) >= 2  # at least standings + the Jornadas panel header
 
 
 def test_movements_and_squads_show_player_photo_and_team_crest():

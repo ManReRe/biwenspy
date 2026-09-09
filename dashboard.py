@@ -89,26 +89,18 @@ select {
 .manager-panel.active { display: block; }
 .badge { display: inline-block; background: var(--primary-light); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.jornadas-table th { white-space: normal; max-width: 96px; }
-.jornadas-table .jornada-name {
-  position: sticky; left: 0; background: var(--card-bg); z-index: 1; white-space: nowrap;
-  box-shadow: 1px 0 0 var(--border);
-}
 .cell-best { background: var(--primary-light); border-radius: 6px; font-weight: 700; }
-.totals-row td { border-top: 2px solid var(--border); }
-.scroll-hint { color: var(--primary); font-size: 0.82rem; font-weight: 600; margin: 0 0 8px; }
 .avatar {
   width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle;
   margin-right: 8px; background: var(--border);
 }
-.avatar-sm { width: 22px; height: 22px; margin-right: 6px; }
 .panel-header {
   display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 1.05rem;
   font-weight: 700;
 }
 .panel-header .avatar { width: 32px; height: 32px; margin-right: 0; }
 .player-icons { display: inline-flex; align-items: center; margin-right: 8px; vertical-align: middle; }
-.player-icons .crest { width: 16px; height: 16px; margin-right: 4px; }
+.player-icons .crest { width: 16px; height: 16px; margin-right: 4px; object-fit: contain; }
 .player-icons .player-photo {
   width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: var(--border);
 }
@@ -304,11 +296,13 @@ def _facts_html(facts, biggest_bonus_round=None):
     return f'<ul class="fact-list">{"".join(items)}</ul>' if items else "<p>Sin datos todavia.</p>"
 
 
-def _breakdown_table_html(breakdown, names):
+def _breakdown_table_html(breakdown, names, icons):
     rows = []
     for user_id, values in breakdown.items():
+        avatar = _avatar_img_html(icons.get(user_id))
+        name = html.escape(names.get(user_id, str(user_id)))
         rows.append(
-            f"<tr><td>{html.escape(names.get(user_id, str(user_id)))}</td>"
+            f"<tr><td>{avatar}{name}</td>"
             f"<td>{values['points']:,} EUR</td><td>{values['sales']:,} EUR</td>"
             f"<td>{values['purchases']:,} EUR</td></tr>"
         )
@@ -483,12 +477,14 @@ def _squads_tab_html(squad_table, names, icons, users):
     return select_html + "".join(panels)
 
 
-def _lineup_rows_html(lineup):
+def _lineup_rows_html(lineup, players):
     captain_id = lineup["captain"]["player_id"]
     rows = []
     for player in lineup["starters"]:
         captain_badge = ' <span class="badge">C</span>' if player["player_id"] == captain_id else ""
-        name_cell = html.escape(player["name"]) + captain_badge
+        team_id = players.get(player["player_id"], {}).get("team_id")
+        icons_html = _player_icons_html(player["player_id"], team_id)
+        name_cell = icons_html + html.escape(player["name"]) + captain_badge
         rows.append(
             f"<tr><td>{_position_label(player['position'])}</td><td>{name_cell}</td>"
             f"<td>{player['avg_points']:.1f}</td></tr>"
@@ -496,10 +492,10 @@ def _lineup_rows_html(lineup):
     return "".join(rows)
 
 
-def _lineup_html(lineup):
+def _lineup_html(lineup, players):
     if lineup is None:
         return "<p>No hay suficientes jugadores disponibles en la plantilla para sugerir una alineacion.</p>"
-    rows_html = _lineup_rows_html(lineup)
+    rows_html = _lineup_rows_html(lineup, players)
     return (
         f'<p><strong>Formacion sugerida:</strong> {lineup["formation"]} '
         f'&nbsp;&middot;&nbsp; Puntos esperados (suma de medias recientes): {lineup["total_points"]:.1f}</p>'
@@ -562,7 +558,7 @@ def _next_round_tab_html(users, names, icons, squad_table, players, player_form,
         panel_html = (
             f"{panel_header}"
             "<h3>Alineacion recomendada para la proxima jornada</h3>"
-            f"{_lineup_html(lineup)}"
+            f"{_lineup_html(lineup, players)}"
             f"{lineup_disclosure}"
             "<h3>Perfil de mercado</h3>"
             f"{_market_profile_html(profile)}"
@@ -585,66 +581,88 @@ def _jornadas_tab_html(round_bonus_rows, standings, names, icons):
     if not round_bonus_rows:
         return "<p>Sin jornadas todavia.</p>"
 
-    # Manager columns in league-standings order; defensively append anyone who
-    # somehow has a bonus but no standings row.
-    user_ids = [s["user_id"] for s in sorted(standings, key=lambda r: r["position"])]
+    # Managers in league-standings order; defensively append anyone who somehow
+    # has a bonus but no standings row.
+    user_ids_in_order = [s["user_id"] for s in sorted(standings, key=lambda r: r["position"])]
     for row in round_bonus_rows:
         for user_id in row["amounts"]:
-            if user_id not in user_ids:
-                user_ids.append(user_id)
-
-    header_cells = "".join(
-        f'<th class="num">{_avatar_img_html(icons.get(uid), "avatar avatar-sm")}'
-        f'{html.escape(names.get(uid, str(uid)))}</th>'
-        for uid in user_ids
-    )
+            if user_id not in user_ids_in_order:
+                user_ids_in_order.append(user_id)
 
     totals = defaultdict(int)
-    body_rows = []
     for row in round_bonus_rows:
-        # Highlight whoever scored the biggest bonus that jornada, so a wide
-        # multi-manager table can be scanned at a glance instead of read cell by cell.
-        best_amount = max(row["amounts"].values(), default=None)
-        cells = []
-        for user_id in user_ids:
-            amount = row["amounts"].get(user_id)
-            if amount is None:
-                cells.append('<td class="num">-</td>')
-                continue
+        for user_id, amount in row["amounts"].items():
             totals[user_id] += amount
-            is_best = amount > 0 and amount == best_amount
-            cell_class = "num cell-best" if is_best else "num"
-            cells.append(f'<td class="{cell_class}">{amount:,} EUR</td>')
-        body_rows.append(
-            f'<tr><td class="jornada-name">{html.escape(row["name"])}</td>{"".join(cells)}</tr>'
+
+    options = []
+    panels = []
+    for index, user_id in enumerate(user_ids_in_order):
+        manager_name = html.escape(names.get(user_id, str(user_id)))
+        options.append(f'<option value="{user_id}">{manager_name}</option>')
+        panel_header = (
+            f'<div class="panel-header">{_avatar_img_html(icons.get(user_id))}{manager_name}</div>'
         )
 
+        manager_amounts = [(row["name"], row["amounts"].get(user_id)) for row in round_bonus_rows]
+        # Highlight this manager's own best jornada, so it's obvious at a glance
+        # without needing to compare against every other manager's column.
+        best_amount = max((a for _, a in manager_amounts if a is not None), default=None)
+
+        row_html = []
+        for round_name, amount in manager_amounts:
+            if amount is None:
+                row_html.append(f'<tr><td>{html.escape(round_name)}</td><td class="num">-</td></tr>')
+                continue
+            is_best = best_amount is not None and amount > 0 and amount == best_amount
+            cell_class = "num cell-best" if is_best else "num"
+            row_html.append(
+                f'<tr><td>{html.escape(round_name)}</td><td class="{cell_class}">{amount:,} EUR</td></tr>'
+            )
+        empty_row = '<tr><td colspan="2">Sin jornadas todavia.</td></tr>'
+        rows_html = "".join(row_html) if row_html else empty_row
+
+        summary = (
+            '<p class="movements-summary">Total ganado por puntos: '
+            f'<strong>{totals.get(user_id, 0):,} EUR</strong></p>'
+        )
+        table = (
+            '<div class="table-wrap"><table><thead><tr><th>Jornada</th>'
+            '<th class="num">Importe</th></tr></thead>'
+            f"<tbody>{rows_html}</tbody></table></div>"
+        )
+        active_class = " active" if index == 0 else ""
+        panels.append(
+            f'<div class="manager-panel{active_class}" data-prefix="jornadas" '
+            f'id="manager-jornadas-{user_id}">{panel_header}{summary}{table}</div>'
+        )
+
+    select_html = (
+        '<select id="managerSelect-jornadas" onchange="showManager(\'jornadas\', this.value)">'
+        f'{"".join(options)}</select>'
+    )
+
+    # Season-wide summary at the end: one row per manager, so the at-a-glance
+    # comparison a wide matrix used to give is still available without needing to
+    # flip through every manager one by one.
     best_total = max(totals.values(), default=0)
-    total_cells = []
-    for user_id in user_ids:
+    summary_rows = []
+    for user_id in sorted(user_ids_in_order, key=lambda uid: totals.get(uid, 0), reverse=True):
         total = totals.get(user_id, 0)
+        avatar = _avatar_img_html(icons.get(user_id))
+        name = html.escape(names.get(user_id, str(user_id)))
         leader_badge = ' <span class="badge">Lider</span>' if total > 0 and total == best_total else ""
-        total_cells.append(f'<td class="num"><strong>{total:,} EUR</strong>{leader_badge}</td>')
-    total_row = (
-        '<tr class="totals-row"><td class="jornada-name"><strong>Total</strong></td>'
-        f'{"".join(total_cells)}</tr>'
+        summary_rows.append(
+            f"<tr><td>{avatar}{name}</td>"
+            f'<td class="num"><strong>{total:,} EUR</strong>{leader_badge}</td></tr>'
+        )
+    summary_html = (
+        "<h3>Resumen de la temporada</h3>"
+        '<div class="table-wrap"><table><thead><tr><th>Manager</th>'
+        '<th class="num">Total ganado por puntos</th></tr></thead>'
+        f"<tbody>{''.join(summary_rows)}</tbody></table></div>"
     )
 
-    # With enough managers the table is wider than the card and needs horizontal
-    # scrolling; the scroll-shadow CSS hint alone is too subtle to notice at a
-    # glance, so spell it out -- otherwise a table cut off mid-column just looks
-    # broken instead of "scroll for more".
-    scroll_hint = (
-        '<p class="scroll-hint">Desliza la tabla hacia la derecha para ver a todos los managers &rarr;</p>'
-        if len(user_ids) > 5 else ""
-    )
-
-    return (
-        f"{scroll_hint}"
-        '<div class="table-wrap"><table class="jornadas-table"><thead><tr>'
-        '<th class="jornada-name">Jornada</th>' + header_cells + "</tr></thead>"
-        f"<tbody>{''.join(body_rows)}{total_row}</tbody></table></div>"
-    )
+    return select_html + "".join(panels) + summary_html
 
 
 def build_dashboard_html(conn):
@@ -735,7 +753,7 @@ def build_dashboard_html(conn):
 <div class="tab-panel" id="tab-desglose">
 <div class="card">
 <h2>Desglose de ingresos y gastos</h2>
-{_breakdown_table_html(breakdown, names)}
+{_breakdown_table_html(breakdown, names, icons)}
 </div>
 </div>
 
