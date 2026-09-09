@@ -2,7 +2,7 @@
 import html
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -151,6 +151,7 @@ TRANSLATIONS = {
         "update_done": "Listo, datos actualizados. Recargando...",
         "update_timeout": "Esta tardando mas de lo normal -- comprueba la pestana Actions del repositorio.",
         "update_error": "No se pudo lanzar la actualizacion. Intentalo de nuevo en un momento.",
+        "last_updated_label": "Ultima actualizacion: {datetime} UTC",
     },
     "en": {
         "doc_title": "Biwenger Dashboard",
@@ -283,6 +284,7 @@ TRANSLATIONS = {
         "update_done": "Done, data updated. Reloading...",
         "update_timeout": "This is taking longer than usual -- check the repository's Actions tab.",
         "update_error": "Couldn't start the update. Try again in a moment.",
+        "last_updated_label": "Last updated: {datetime} UTC",
     },
 }
 
@@ -326,15 +328,16 @@ body {
 .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 h1 { font-size: 1.6rem; margin: 0 0 2px; }
 .subtitle { color: var(--text-muted); margin: 0 0 20px; font-size: 0.95rem; }
-#langSelect { width: auto; min-width: 140px; }
+#langSelect { width: auto; min-width: 140px; margin-bottom: 0; }
 .header-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .header-actions-row { display: flex; gap: 8px; align-items: center; }
 #updateBtn {
   padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.9rem;
-  font-weight: 600; background: var(--primary); color: #fff; cursor: pointer;
+  font-weight: 600; background: var(--primary); color: #fff; cursor: pointer; line-height: 1.2;
 }
 #updateBtn:disabled { opacity: 0.6; cursor: default; }
-.update-status { font-size: 0.8rem; color: var(--text-muted); max-width: 260px; text-align: right; }
+.update-status { font-size: 0.8rem; color: var(--text-muted); max-width: 260px; text-align: right; margin: 0; }
+.last-updated { font-size: 0.78rem; color: var(--text-muted); text-align: right; margin: 0; }
 .card {
   background: var(--card-bg); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px;
   border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -1306,7 +1309,10 @@ def build_dashboard_html(conn):
     # (e.g. a phone switching between portrait and landscape) instead of staying at
     # whatever size it first rendered at. Fixed div_id lets the language switcher call
     # Plotly.relayout() on it later to translate the title/axis labels in place.
-    plot_config = {"responsive": True}
+    # displayModeBar=False: the toolbar (zoom/pan/download icons) has nowhere to go on a
+    # phone-width chart other than directly on top of the title -- this is a read-only
+    # dashboard, so drop it instead of fighting for space with it.
+    plot_config = {"responsive": True, "displayModeBar": False}
     balance_fig_html = pio.to_html(
         _balance_chart(balance_timelines, names), full_html=False, include_plotlyjs=True,
         config=plot_config, div_id="chart-balance",
@@ -1323,6 +1329,7 @@ def build_dashboard_html(conn):
         .replace("__TRIGGER_URL_JSON__", json.dumps(TRIGGER_URL))
     )
     subtitle_args = {"amount": f"{starting_balance:,}"}
+    generated_at_args = {"datetime": datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")}
 
     return f"""<!DOCTYPE html>
 <html lang="es">
@@ -1357,6 +1364,7 @@ def build_dashboard_html(conn):
 <button id="updateBtn" onclick="triggerUpdate()" {_i18n_attr("update_button")}>{_t("update_button")}</button>
 </div>
 <p class="update-status" id="updateStatus" hidden></p>
+<p class="last-updated" id="lastUpdated" {_i18n_attr("last_updated_label", **generated_at_args)}>{_t("last_updated_label", **generated_at_args)}</p>
 </div>
 </div>
 
