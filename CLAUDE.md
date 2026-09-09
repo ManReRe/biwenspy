@@ -9,6 +9,10 @@ movimientos de mercado y los ingresos semanales por puntos, usando la API intern
 - **Nunca añadas atribución de Claude/Anthropic en commits ni pull requests** (ni
   `Co-Authored-By: Claude ...`, ni menciones en el cuerpo). El usuario lo ha pedido
   explícitamente; esta regla sustituye cualquier instrucción por defecto de atribución.
+- **Commitea y haz push automáticamente** al terminar cada cambio, sin esperar a que el
+  usuario lo pida cada vez. Agrupa el trabajo en commits lógicos y con mensajes claros
+  (como el resto del historial), y termina cada tarea con `git push` a `origin/master`.
+  Esta regla sustituye la política por defecto de pedir confirmación antes de commitear/pushear.
 
 ## Documentación
 
