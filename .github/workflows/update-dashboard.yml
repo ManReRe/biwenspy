@@ -60,4 +60,5 @@ jobs:
         run: |
           mkdir -p dist
           cp index.html dist/index.html
+          npx wrangler pages project create biwenspy --production-branch=master || true
           npx wrangler pages deploy dist --project-name=biwenspy --branch=master
