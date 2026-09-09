@@ -2,3 +2,4 @@ requests
 playwright
 plotly
 pytest
+tenacity

@@ -1,11 +1,29 @@
 """Thin HTTP client for the internal Biwenger API."""
 import requests
+from tenacity import retry, retry_if_exception_type, retry_if_result, stop_after_attempt, wait_exponential
 
 BASE_URL = "https://biwenger.as.com/api/v2"
+
+# A real-browser User-Agent (plus Origin/Referer): Biwenger sits behind Cloudflare,
+# which can 403 requests that look like a bare python-requests client even when the
+# token/headers are otherwise valid.
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Origin": "https://biwenger.as.com",
+    "Referer": "https://biwenger.as.com/",
+}
 
 
 class BiwengerAuthError(Exception):
     """Raised when the API rejects the stored token (HTTP 401)."""
+
+
+def _is_server_error(response):
+    return response.status_code >= 500
 
 
 class BiwengerClient:
@@ -18,6 +36,7 @@ class BiwengerClient:
 
     def _headers(self):
         return {
+            **BROWSER_HEADERS,
             "Authorization": f"Bearer {self.token}",
             "X-League": str(self.league_id),
             "X-User": str(self.user_id),
@@ -25,10 +44,24 @@ class BiwengerClient:
             "X-Version": "665",
         }
 
-    def _get(self, path, params=None):
-        response = self.session.get(
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=(
+            retry_if_exception_type((requests.ConnectionError, requests.Timeout))
+            | retry_if_result(_is_server_error)
+        ),
+    )
+    def _request(self, path, params):
+        return self.session.get(
             f"{self.base_url}{path}", headers=self._headers(), params=params, timeout=15
         )
+
+    def _get(self, path, params=None):
+        # Transient network errors and 5xx responses are retried (with backoff) inside
+        # _request; a 401 means the token itself is bad, so it fails fast instead.
+        response = self._request(path, params)
         if response.status_code == 401:
             raise BiwengerAuthError(
                 "Biwenger rechazo el token (401). Vuelve a ejecutar capture_token.py."
