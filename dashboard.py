@@ -11,7 +11,7 @@ import analytics
 import db
 
 DB_PATH = "biwenger.db"
-OUTPUT_PATH = "dashboard.html"
+OUTPUT_PATH = "index.html"  # GitHub Pages (source: master, root) only ever serves this filename
 
 # All user-facing strings, keyed the same in both languages so the client-side
 # switcher (see SCRIPT) can look either one up by key. Spanish is the default:

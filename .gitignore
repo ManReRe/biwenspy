@@ -1,7 +1,6 @@
 .worktrees/
 config.json
 biwenger.db
-dashboard.html
 __pycache__/
 *.pyc
 .venv/

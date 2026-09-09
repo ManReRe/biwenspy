@@ -21,9 +21,9 @@ echo "Generating dashboard..."
 python3 dashboard.py
 
 if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open dashboard.html >/dev/null 2>&1 &
+    xdg-open index.html >/dev/null 2>&1 &
 elif command -v open >/dev/null 2>&1; then
-    open dashboard.html
+    open index.html
 else
-    echo "Open dashboard.html manually in your browser."
+    echo "Open index.html manually in your browser."
 fi

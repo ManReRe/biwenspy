@@ -29,9 +29,19 @@ movimientos de mercado y los ingresos semanales por puntos, usando la API intern
 - `db.py` — esquema y acceso a SQLite.
 - `analytics.py` — reconstrucción de balances, puntos y "datos curiosos" a partir de los datos
   guardados.
-- `dashboard.py` — genera `dashboard.html` (autocontenido, Plotly) a partir de la base de datos.
+- `dashboard.py` — genera `index.html` (autocontenido, Plotly) a partir de la base de datos.
 
 ## Notas
 
 - `config.json` (token, id de liga, id de usuario) y `biwenger.db` son datos locales/privados:
   nunca deben commitearse (ver `.gitignore`).
+- `index.html` es justo lo contrario: **sí se commitea a propósito**. El repo está desplegado en
+  GitHub Pages (`manrere.github.io/biwenspy/`, repo público, plan gratuito) y Pages solo sirve
+  `index.html` desde la raíz de `master` — por eso `dashboard.py` genera ese nombre exacto y no
+  `dashboard.html`. El dashboard lleva un login por JavaScript (usuario/contraseña en
+  `dashboard.py`) que es solo una cortina para un visitante casual: al ser un repo público, el
+  HTML generado (con los datos reales de la liga) es igualmente legible navegando el repo o vía
+  `raw.githubusercontent.com`, sin pasar por el login. Decisión consciente del usuario (no quiere
+  pagar GitHub Pro por un repo privado); no "arreglar" esto sin que lo pida.
+- Tras resincronizar, `index.html` cambia con datos nuevos de la liga — sigue la regla de arriba
+  de commitear y pushear automáticamente para que `manrere.github.io/biwenspy/` quede al día.
