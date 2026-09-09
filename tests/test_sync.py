@@ -479,7 +479,7 @@ def test_main_exits_cleanly_on_auth_error(tmp_path, monkeypatch):
             pass
 
         def get_league_users(self):
-            raise sync.BiwengerAuthError("Biwenger rechazo el token (401).")
+            raise sync.BiwengerAuthError("Biwenger rejected the token (401).")
 
     monkeypatch.setattr(sync, "BiwengerClient", ExplodingAuthClient)
 

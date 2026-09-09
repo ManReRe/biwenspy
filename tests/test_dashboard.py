@@ -144,7 +144,7 @@ def test_movement_description_never_renders_the_literal_none_for_a_playerless_ev
         "type": "market", "direction": "expense", "player_id": None,
         "counterparty_id": None,
     }
-    description = dashboard._movement_description(event, names={}, players={}, rounds_by_id={})
+    _attr, description = dashboard._movement_description_html(event, names={}, players={}, rounds_by_id={})
     assert "None" not in description
     assert description == "Compra al mercado"
 
@@ -157,7 +157,7 @@ def test_movement_description_never_renders_the_literal_none_for_an_unresolvable
         "type": "transfer", "direction": "expense", "player_id": None,
         "counterparty_id": None,
     }
-    description = dashboard._movement_description(event, names={}, players={}, rounds_by_id={})
+    _attr, description = dashboard._movement_description_html(event, names={}, players={}, rounds_by_id={})
     assert "None" not in description
     assert description == "Compra a un manager desconocido"
 
@@ -235,7 +235,12 @@ def test_build_dashboard_html_omits_the_real_balance_check_when_unavailable():
 
     output = dashboard.build_dashboard_html(conn)
 
-    assert "Comprobacion" not in output
+    # The translation dictionary embedded for the language switcher always carries
+    # both disclosure templates, so check for the actual rendered element (its
+    # data-i18n attribute) rather than the translated text, which is always present
+    # somewhere in the page regardless of whether this disclosure is shown.
+    assert 'data-i18n="disclosure_calibrated"' not in output
+    assert 'data-i18n="disclosure_diff"' not in output
 
 
 def test_build_dashboard_html_has_a_tab_for_each_section():
@@ -257,8 +262,8 @@ def test_build_dashboard_html_movements_selector_lists_every_manager():
 
     output = dashboard.build_dashboard_html(conn)
 
-    assert '<option value="1">Ana (2 movimientos)</option>' in output
-    assert '<option value="2">Beto (0 movimientos)</option>' in output
+    assert '<option value="1"' in output and "Ana (2 movimientos)" in output
+    assert '<option value="2"' in output and "Beto (0 movimientos)" in output
     assert 'id="manager-movimientos-2"' in output
     assert "Sin movimientos todavia." in output
 
@@ -383,7 +388,8 @@ def test_jornadas_tab_season_summary_ranks_managers_and_badges_the_leader():
     output = dashboard.build_dashboard_html(conn)
 
     assert "Resumen de la temporada" in output
-    assert "<strong>2,000,000 EUR</strong> <span class=\"badge\">Lider</span>" in output
+    assert "<strong>2,000,000 EUR</strong>" in output
+    assert 'class="badge"' in output and ">Lider</span>" in output
 
 
 def test_standings_and_jornadas_show_the_manager_avatar_when_icon_is_known():

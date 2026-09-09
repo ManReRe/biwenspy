@@ -238,7 +238,7 @@ def main():
         print(str(error), file=sys.stderr)
         sys.exit(1)
 
-    print(f"Sincronizacion completa. {len(db.get_all_money_events(conn))} movimientos de dinero en {DB_PATH}.")
+    print(f"Sync complete. {len(db.get_all_money_events(conn))} money movements in {DB_PATH}.")
 
 
 if __name__ == "__main__":

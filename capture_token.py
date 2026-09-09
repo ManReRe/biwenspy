@@ -22,16 +22,16 @@ def wait_for_login(page):
             return token
         time.sleep(POLL_SECONDS)
         waited += POLL_SECONDS
-    raise TimeoutError("No se detecto login tras 5 minutos. Vuelve a ejecutar el script.")
+    raise TimeoutError("No login detected after 5 minutes. Run the script again.")
 
 
 def pick_league(leagues):
     if len(leagues) == 1:
         return leagues[0]
-    print("Tienes varias ligas, elige una:")
+    print("You have several leagues, pick one:")
     for index, league in enumerate(leagues):
         print(f"  [{index}] {league['name']} (id {league['id']})")
-    choice = int(input("Numero de liga: "))
+    choice = int(input("League number: "))
     return leagues[choice]
 
 
@@ -39,8 +39,8 @@ def main():
     with sync_playwright() as playwright:
         # Use the real, installed Google Chrome (not Playwright's bundled Chromium) and
         # disable the "AutomationControlled" flag: Google's login blocks OAuth (e.g.
-        # "Iniciar sesion con Google") from browsers it detects as automated otherwise,
-        # even for a real personal login.
+        # "Sign in with Google") from browsers it detects as automated otherwise, even
+        # for a real personal login.
         browser = playwright.chromium.launch(
             headless=False,
             channel="chrome",
@@ -48,7 +48,7 @@ def main():
         )
         page = browser.new_page()
         page.goto(LOGIN_URL)
-        print("Inicia sesion en la ventana de Chrome. Esperando...")
+        print("Log in in the Chrome window. Waiting...")
         token = wait_for_login(page)
 
         last_session = json.loads(page.evaluate("localStorage.getItem('lastSession')"))
@@ -63,7 +63,7 @@ def main():
         with open(CONFIG_PATH, "w") as config_file:
             json.dump(config, config_file, indent=2)
 
-        print(f"Listo. Guardado en {CONFIG_PATH} para la liga '{league['name']}'.")
+        print(f"Done. Saved to {CONFIG_PATH} for league '{league['name']}'.")
         browser.close()
 
 

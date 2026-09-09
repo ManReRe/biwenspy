@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Sincroniza la liga y regenera el dashboard, abriéndolo al terminar.
-# Si no existe config.json (primera vez, o el token caducó), captura la
-# sesión primero (abre Chrome y espera a que inicies sesión manualmente).
+# Syncs the league and regenerates the dashboard, opening it when done.
+# If config.json doesn't exist (first run, or the token expired), captures
+# the session first (opens Chrome and waits for you to log in manually).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -10,14 +10,14 @@ if [ -f .venv/bin/activate ]; then
 fi
 
 if [ ! -f config.json ]; then
-    echo "No se encontró config.json — capturando sesión de Biwenger..."
+    echo "config.json not found — capturing Biwenger session..."
     python3 capture_token.py
 fi
 
-echo "Sincronizando datos de la liga..."
+echo "Syncing league data..."
 python3 sync.py
 
-echo "Generando dashboard..."
+echo "Generating dashboard..."
 python3 dashboard.py
 
 if command -v xdg-open >/dev/null 2>&1; then
@@ -25,5 +25,5 @@ if command -v xdg-open >/dev/null 2>&1; then
 elif command -v open >/dev/null 2>&1; then
     open dashboard.html
 else
-    echo "Abre dashboard.html manualmente en tu navegador."
+    echo "Open dashboard.html manually in your browser."
 fi

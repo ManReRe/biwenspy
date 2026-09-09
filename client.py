@@ -64,7 +64,7 @@ class BiwengerClient:
         response = self._request(path, params)
         if response.status_code == 401:
             raise BiwengerAuthError(
-                "Biwenger rechazo el token (401). Vuelve a ejecutar capture_token.py."
+                "Biwenger rejected the token (401). Run capture_token.py again."
             )
         response.raise_for_status()
         return response.json()["data"]
