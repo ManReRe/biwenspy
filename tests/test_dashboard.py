@@ -144,7 +144,7 @@ def test_movement_description_never_renders_the_literal_none_for_a_playerless_ev
         "type": "market", "direction": "expense", "player_id": None,
         "counterparty_id": None,
     }
-    description = dashboard._movement_description(event, names={}, players={})
+    description = dashboard._movement_description(event, names={}, players={}, rounds_by_id={})
     assert "None" not in description
     assert description == "Compra al mercado"
 
@@ -157,7 +157,7 @@ def test_movement_description_never_renders_the_literal_none_for_an_unresolvable
         "type": "transfer", "direction": "expense", "player_id": None,
         "counterparty_id": None,
     }
-    description = dashboard._movement_description(event, names={}, players={})
+    description = dashboard._movement_description(event, names={}, players={}, rounds_by_id={})
     assert "None" not in description
     assert description == "Compra a un manager desconocido"
 

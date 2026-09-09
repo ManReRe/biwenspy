@@ -49,6 +49,7 @@ tr:last-child td { border-bottom: none; }
 .table-wrap { overflow-x: auto; }
 .amount-income { color: var(--income); font-weight: 600; }
 .amount-expense { color: var(--expense); font-weight: 600; }
+.amount-balance { color: var(--text-muted); font-weight: 600; }
 select {
   padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.95rem;
   margin-bottom: 16px; background: var(--card-bg); color: var(--text);
@@ -212,7 +213,7 @@ def _breakdown_table_html(breakdown, names):
     )
 
 
-def _movement_description(event, names, players):
+def _movement_description(event, names, players, rounds_by_id):
     # player_id is genuinely None (not merely unresolvable) for roundFinished events,
     # and in principle for a market/transfer movement missing its "player" field. In
     # either case analytics.player_name(players, None) returns None -- guard every
@@ -222,7 +223,8 @@ def _movement_description(event, names, players):
     counterparty = names.get(event["counterparty_id"]) if event["counterparty_id"] else None
 
     if event["type"] == "roundFinished":
-        return "Bonus de jornada"
+        round_name = rounds_by_id.get(event["round_id"])
+        return f"Bonus de {round_name}" if round_name else "Bonus de jornada"
     if event["type"] == "market":
         return f"Compra de {player} al mercado" if player else "Compra al mercado"
     if event["type"] == "transfer" and event["direction"] == "income":
@@ -236,7 +238,7 @@ def _movement_description(event, names, players):
     return event["type"]
 
 
-def _movements_tab_html(events, names, players, users):
+def _movements_tab_html(events, names, players, users, rounds_by_id, running_balances):
     by_user = defaultdict(list)
     for event in events:
         by_user[event["user_id"]].append(event)
@@ -274,18 +276,31 @@ def _movements_tab_html(events, names, players, users):
         )
 
         rows = []
-        for event in sorted(user_events, key=lambda e: e["date"], reverse=True):
+        # Sort ascending then reverse the whole list (rather than sorted(..., reverse=True))
+        # so that events sharing the exact same timestamp -- e.g. several simultaneous
+        # market purchases in one settlement -- come out in TRUE reverse-chronological
+        # order. sorted(reverse=True) is stable but keeps tied elements in their original
+        # ascending order, which would misalign the newest-first display against
+        # running_balances (computed by replaying events in ascending order), making the
+        # balance look inverted for any two operations that landed in the same instant.
+        for event in reversed(sorted(user_events, key=lambda e: e["date"])):
             is_income = event["direction"] == "income"
             sign = "+" if is_income else "-"
             css_class = "amount-income" if is_income else "amount-expense"
-            description = html.escape(_movement_description(event, names, players))
+            description = html.escape(_movement_description(event, names, players, rounds_by_id))
+            balance_after = running_balances.get(event["id"])
+            balance_cell = f"{balance_after:,} EUR" if balance_after is not None else "-"
             rows.append(
                 f"<tr><td>{_format_date(event['date'])}</td><td>{description}</td>"
-                f'<td class="{css_class}">{sign}{event["amount"]:,} EUR</td></tr>'
+                f'<td class="{css_class}">{sign}{event["amount"]:,} EUR</td>'
+                f'<td class="amount-balance">{balance_cell}</td></tr>'
             )
+        empty_row = '<tr><td colspan="4">Sin movimientos todavia.</td></tr>'
+        rows_html = "".join(rows) if rows else empty_row
         table = (
-            '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Importe</th></tr></thead>'
-            f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"3\">Sin movimientos todavia.</td></tr>'}</tbody></table></div>"
+            '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Movimiento</th>'
+            "<th>Importe</th><th>Saldo</th></tr></thead>"
+            f"<tbody>{rows_html}</tbody></table></div>"
         )
         active_class = " active" if index == 0 else ""
         panels.append(f'<div class="manager-panel{active_class}" id="manager-{user_id}">{summary}{table}</div>')
@@ -338,6 +353,7 @@ def build_dashboard_html(conn):
     events = db.get_all_money_events(conn)
     round_points = db.get_all_round_points(conn)
     rounds = db.get_all_rounds(conn)
+    rounds_by_id = {r["id"]: r["name"] for r in rounds}
     standings = db.get_standings(conn)
     players = db.get_players(conn)
 
@@ -358,6 +374,7 @@ def build_dashboard_html(conn):
     owner_real_balance = int(owner_real_balance_raw) if owner_real_balance_raw is not None else None
 
     balance_timelines = analytics.compute_balance_timeline(events, starting_balance=starting_balance)
+    running_balances = analytics.compute_running_balances(events, starting_balance=starting_balance)
     current_balances = analytics.compute_current_balances(events, starting_balance=starting_balance)
     points_timelines = analytics.compute_points_timeline(round_points, rounds)
     facts = analytics.compute_curious_facts(events, players, users)
@@ -424,7 +441,7 @@ def build_dashboard_html(conn):
 <div class="tab-panel" id="tab-movimientos">
 <div class="card">
 <h2>Movimientos por manager</h2>
-{_movements_tab_html(events, names, players, users)}
+{_movements_tab_html(events, names, players, users, rounds_by_id, running_balances)}
 </div>
 </div>
 

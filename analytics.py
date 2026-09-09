@@ -30,6 +30,24 @@ def compute_current_balances(money_events, starting_balance=STARTING_BALANCE):
     return {user_id: series[-1][1] for user_id, series in timelines.items() if series}
 
 
+def compute_running_balances(money_events, starting_balance=STARTING_BALANCE):
+    """Return {event_id: balance_after}, replaying each user's events in date order."""
+    by_user = defaultdict(list)
+    for event in sorted(money_events, key=lambda e: e["date"]):
+        by_user[event["user_id"]].append(event)
+
+    balances = {}
+    for events in by_user.values():
+        balance = starting_balance
+        for event in events:
+            if event["direction"] == "income":
+                balance += event["amount"]
+            else:
+                balance -= event["amount"]
+            balances[event["id"]] = balance
+    return balances
+
+
 def compute_points_timeline(round_points, rounds):
     """Return {user_id: [(round_date, cumulative_points), ...]} in round-date order."""
     round_dates = {r["id"]: r["date"] for r in rounds}
