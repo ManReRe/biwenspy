@@ -109,6 +109,30 @@ class BiwengerClient:
             }
         return players
 
+    def get_player(self, player_id):
+        """Return {"name", "team", "position"} for a single player, or None if
+        Biwenger has no record of them at all.
+
+        Fallback for a player who no longer appears in get_players()'s bulk
+        catalog: that endpoint (/competitions/la-liga/data) only lists players
+        on a CURRENT La Liga roster, so a player later transferred out of the
+        league (e.g. to another country) silently drops out of it forever.
+        Confirmed live: the per-player detail endpoint still resolves their
+        name/position in that case (with "team": null, since they're no longer
+        on any La Liga team).
+        """
+        data = self._get(
+            f"/players/la-liga/{player_id}", params={"lang": "es", "fields": "id,name,team,position"}
+        )
+        if not data:
+            return None
+        team = data.get("team")
+        return {
+            "name": data.get("name"),
+            "team": team.get("name") if isinstance(team, dict) else None,
+            "position": data.get("position"),
+        }
+
     def get_manager_squad(self, user_id):
         """Return the current squad of any manager in the league (not just self):
         [{"player_id", "price_paid", "acquired_date"}, ...].

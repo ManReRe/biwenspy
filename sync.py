@@ -146,10 +146,23 @@ def sync_players(client, conn):
         return
 
     players = client.get_players()
+    still_missing = []
     for player_id in missing_ids:
         info = players.get(player_id)
         if info:
             db.upsert_player(conn, player_id, info["name"], info["team"])
+        else:
+            still_missing.append(player_id)
+
+    # A player who has since left La Liga drops out of the bulk catalog above (it
+    # only lists currently active players), so fall back to looking them up one by
+    # one -- otherwise they'd be stuck forever as the placeholder "Jugador <id>" in
+    # movement descriptions, since sync_players only retries ids still missing from
+    # the players table on each run and this bulk endpoint would never resolve them.
+    for player_id in still_missing:
+        info = client.get_player(player_id)
+        if info:
+            db.upsert_player(conn, player_id, info["name"], info["team"], info["position"])
 
 
 def sync_squads_and_form(client, conn, users):

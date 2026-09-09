@@ -349,6 +349,30 @@ def test_sync_players_fetches_and_stores_only_referenced_players():
     assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X", "position": None}}
 
 
+def test_sync_players_falls_back_to_get_player_for_ids_missing_from_the_bulk_catalog():
+    # Reproduces a real bug: a player who has since left La Liga (transferred out)
+    # drops out of the bulk catalog forever, so they were stuck showing up as the
+    # placeholder "Jugador <id>" in movement descriptions.
+    conn = db.init_db(":memory:")
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 1, "round_id": None, "type": "transfer", "user_id": 1,
+        "counterparty_id": None, "player_id": 1852, "amount": 466_300, "direction": "income",
+        "reason_json": None,
+    })
+
+    class FallbackClient:
+        def get_players(self):
+            return {}  # not in the bulk catalog anymore
+
+        def get_player(self, player_id):
+            assert player_id == 1852
+            return {"name": "Ter Stegen", "team": None, "position": 1}
+
+    sync.sync_players(FallbackClient(), conn)
+
+    assert db.get_players(conn) == {1852: {"name": "Ter Stegen", "team": None, "position": 1}}
+
+
 def test_sync_players_skips_api_call_when_nothing_new():
     conn = db.init_db(":memory:")
     db.upsert_player(conn, 10, "Jugador A", "Equipo X")

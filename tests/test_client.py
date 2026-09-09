@@ -80,6 +80,23 @@ def test_get_players_resolves_team_names_by_id():
     }
 
 
+def test_get_player_resolves_a_currently_rostered_player():
+    payload = {
+        "status": 200,
+        "data": {"id": 8747, "name": "Moncayola", "position": 3, "team": {"id": 93, "name": "Osasuna"}},
+    }
+    client, _ = _client(FakeResponse(200, payload))
+    assert client.get_player(8747) == {"name": "Moncayola", "team": "Osasuna", "position": 3}
+
+
+def test_get_player_handles_a_player_no_longer_on_any_team():
+    # Confirmed live: a player who has since left La Liga still resolves by name
+    # via this endpoint, but with "team": null instead of a team object.
+    payload = {"status": 200, "data": {"id": 1852, "name": "Ter Stegen", "position": 1, "team": None}}
+    client, _ = _client(FakeResponse(200, payload))
+    assert client.get_player(1852) == {"name": "Ter Stegen", "team": None, "position": 1}
+
+
 def test_get_manager_squad_returns_player_id_price_and_date():
     payload = {
         "status": 200,
