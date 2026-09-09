@@ -37,17 +37,30 @@ h1 { font-size: 1.6rem; margin: 0 0 2px; }
   border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 .card h2 { font-size: 1.1rem; margin: 0 0 14px; }
-.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
+.tabs {
+  display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border);
+  /* Scroll sideways instead of wrapping to several uneven rows -- with 7 tabs, wrapping
+     ate a lot of vertical space on a phone-width screen and looked ragged. */
+  flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
   background: none; border: none; padding: 10px 18px; font-size: 0.95rem; font-weight: 600;
   color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px;
+  white-space: nowrap; flex: 0 0 auto;
 }
 .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; }
-td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  /* Scroll the table sideways (inside .table-wrap) rather than wrapping cell text --
+     on a narrow phone screen, wrapping a long description across 3 lines turned a
+     short table into a huge, hard-to-scan wall instead of one row per movement. */
+  white-space: nowrap;
+}
 tr:last-child td { border-bottom: none; }
 .table-wrap {
   overflow-x: auto;
@@ -103,6 +116,14 @@ select {
 .player-icons .crest { width: 16px; height: 16px; margin-right: 4px; object-fit: contain; }
 .player-icons .player-photo {
   width: 26px; height: 26px; border-radius: 50%; object-fit: cover; background: var(--border);
+}
+@media (max-width: 480px) {
+  body { padding: 16px 10px; }
+  h1 { font-size: 1.3rem; }
+  .card { padding: 16px 14px; }
+  table { font-size: 0.85rem; }
+  th, td { padding: 8px 8px; }
+  select { width: 100%; }
 }
 """
 
@@ -190,6 +211,11 @@ def _balance_chart(balance_timelines, names):
         title="Dinero disponible por manager", xaxis_title="Fecha", yaxis_title="EUR",
         template="plotly_dark", paper_bgcolor="#151922", plot_bgcolor="#151922",
         font_color="#e8eaed",
+        # A vertical legend (Plotly's default) ate most of a phone-width chart, pushing
+        # the actual plot into a tiny sliver below it -- lay it out horizontally below
+        # the plot instead, wrapping onto more lines on a narrow screen if it must.
+        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
+        margin=dict(t=50, b=90, l=50, r=20),
     )
     return fig
 
@@ -207,6 +233,8 @@ def _points_chart(points_timelines, names):
         title="Puntos acumulados por manager", xaxis_title="Fecha", yaxis_title="Puntos",
         template="plotly_dark", paper_bgcolor="#151922", plot_bgcolor="#151922",
         font_color="#e8eaed",
+        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
+        margin=dict(t=50, b=90, l=50, r=20),
     )
     return fig
 
@@ -706,8 +734,16 @@ def build_dashboard_html(conn):
     squad_table = analytics.compute_squad_table(squads, players)
     market_profile = analytics.compute_market_profile(events, users, current_balances)
 
-    balance_fig_html = plot(_balance_chart(balance_timelines, names), output_type="div", include_plotlyjs=True)
-    points_fig_html = plot(_points_chart(points_timelines, names), output_type="div", include_plotlyjs=False)
+    # responsive=True makes Plotly re-fit the chart to its container on resize/rotation
+    # (e.g. a phone switching between portrait and landscape) instead of staying at
+    # whatever size it first rendered at.
+    plot_config = {"responsive": True}
+    balance_fig_html = plot(
+        _balance_chart(balance_timelines, names), output_type="div", include_plotlyjs=True, config=plot_config,
+    )
+    points_fig_html = plot(
+        _points_chart(points_timelines, names), output_type="div", include_plotlyjs=False, config=plot_config,
+    )
 
     owner_computed_balance = current_balances.get(owner_user_id, starting_balance)
 
