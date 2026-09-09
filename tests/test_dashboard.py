@@ -333,3 +333,30 @@ def test_next_round_tab_shows_market_profile_from_real_history():
 
     assert "Gasto medio por fichaje" in output
     assert "2,000,000 EUR" in output
+
+
+def test_jornadas_tab_highlights_the_top_bonus_and_the_overall_leader():
+    conn = db.init_db(":memory:")
+    db.upsert_user(conn, 1, "Ana", "")
+    db.upsert_user(conn, 2, "Beto", "")
+    db.upsert_standing(conn, 1, 60, 1)
+    db.upsert_standing(conn, 2, 40, 2)
+    db.upsert_round(conn, 1, "Jornada 1", 100)
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 1,
+        "counterparty_id": None, "player_id": None, "amount": 2_000_000, "direction": "income",
+        "reason_json": "{}",
+    })
+    db.insert_money_event(conn, {
+        "id": "e2", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": 2,
+        "counterparty_id": None, "player_id": None, "amount": 500_000, "direction": "income",
+        "reason_json": "{}",
+    })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    # Ana's 2,000,000 is the jornada's top bonus -- highlighted; Beto's 500,000 isn't.
+    assert '<td class="num cell-best">2,000,000 EUR</td>' in output
+    assert '<td class="num">500,000 EUR</td>' in output
+    # Ana also leads the season total, so her total-row cell carries the badge.
+    assert "<strong>2,000,000 EUR</strong> <span class=\"badge\">Lider</span>" in output

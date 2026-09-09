@@ -64,6 +64,10 @@ select {
 .manager-panel { display: none; }
 .manager-panel.active { display: block; }
 .badge { display: inline-block; background: var(--primary-light); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jornadas-table .jornada-name { position: sticky; left: 0; background: var(--card-bg); z-index: 1; }
+.cell-best { background: var(--primary-light); border-radius: 6px; font-weight: 700; }
+.totals-row td { border-top: 2px solid var(--border); }
 """
 
 SCRIPT = """
@@ -476,26 +480,44 @@ def _jornadas_tab_html(round_bonus_rows, standings, names):
             if user_id not in user_ids:
                 user_ids.append(user_id)
 
-    header_cells = "".join(f"<th>{html.escape(names.get(uid, str(uid)))}</th>" for uid in user_ids)
+    header_cells = "".join(
+        f'<th class="num">{html.escape(names.get(uid, str(uid)))}</th>' for uid in user_ids
+    )
 
     totals = defaultdict(int)
     body_rows = []
     for row in round_bonus_rows:
+        # Highlight whoever scored the biggest bonus that jornada, so a wide
+        # multi-manager table can be scanned at a glance instead of read cell by cell.
+        best_amount = max(row["amounts"].values(), default=None)
         cells = []
         for user_id in user_ids:
             amount = row["amounts"].get(user_id)
             if amount is None:
-                cells.append("<td>-</td>")
-            else:
-                totals[user_id] += amount
-                cells.append(f"<td>{amount:,} EUR</td>")
-        body_rows.append(f"<tr><td>{html.escape(row['name'])}</td>{''.join(cells)}</tr>")
+                cells.append('<td class="num">-</td>')
+                continue
+            totals[user_id] += amount
+            is_best = amount > 0 and amount == best_amount
+            cell_class = "num cell-best" if is_best else "num"
+            cells.append(f'<td class="{cell_class}">{amount:,} EUR</td>')
+        body_rows.append(
+            f'<tr><td class="jornada-name">{html.escape(row["name"])}</td>{"".join(cells)}</tr>'
+        )
 
-    total_cells = "".join(f"<td><strong>{totals.get(uid, 0):,} EUR</strong></td>" for uid in user_ids)
-    total_row = f"<tr><td><strong>Total</strong></td>{total_cells}</tr>"
+    best_total = max(totals.values(), default=0)
+    total_cells = []
+    for user_id in user_ids:
+        total = totals.get(user_id, 0)
+        leader_badge = ' <span class="badge">Lider</span>' if total > 0 and total == best_total else ""
+        total_cells.append(f'<td class="num"><strong>{total:,} EUR</strong>{leader_badge}</td>')
+    total_row = (
+        '<tr class="totals-row"><td class="jornada-name"><strong>Total</strong></td>'
+        f'{"".join(total_cells)}</tr>'
+    )
 
     return (
-        '<div class="table-wrap"><table><thead><tr><th>Jornada</th>' + header_cells + "</tr></thead>"
+        '<div class="table-wrap"><table class="jornadas-table"><thead><tr>'
+        '<th class="jornada-name">Jornada</th>' + header_cells + "</tr></thead>"
         f"<tbody>{''.join(body_rows)}{total_row}</tbody></table></div>"
     )
 
