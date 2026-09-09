@@ -1,0 +1,44 @@
+name: Update dashboard
+
+# Manual trigger only, on purpose: the user wants to refresh the published
+# dashboard whenever they choose (e.g. from the GitHub mobile app's Actions
+# tab -> "Run workflow"), not on a fixed schedule.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        # Only sync.py/dashboard.py's own deps -- playwright (capture_token.py's
+        # manual-login helper) doesn't run here and isn't needed.
+        run: pip install requests plotly tenacity
+
+      - name: Write Biwenger session config
+        env:
+          BIWENGER_CONFIG: ${{ secrets.BIWENGER_CONFIG }}
+        run: echo "$BIWENGER_CONFIG" > config.json
+
+      - name: Sync league data
+        run: python3 sync.py
+
+      - name: Generate dashboard
+        run: python3 dashboard.py
+
+      - name: Commit and push if index.html changed
+        run: |
+          git config user.name "biwenspy-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html
+          git diff --staged --quiet && echo "No changes." || git commit -m "Auto-update dashboard"
+          git push
