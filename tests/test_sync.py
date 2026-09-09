@@ -377,9 +377,50 @@ def test_sync_players_falls_back_to_get_player_for_ids_missing_from_the_bulk_cat
     }
 
 
+def test_sync_players_backfills_team_id_for_an_already_known_player():
+    # A player resolved before the crest feature existed (or one nobody currently
+    # owns, so sync_squads_and_form never touches them) has team_id=None even
+    # though their identity is otherwise fully known -- must self-heal on the next
+    # sync, not stay stuck forever just because they're not "missing" anymore.
+    conn = db.init_db(":memory:")
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=2)  # team_id left unset
+    db.insert_money_event(conn, {
+        "id": "e1", "date": 1, "round_id": None, "type": "market", "user_id": 1,
+        "counterparty_id": None, "player_id": 10, "amount": 100, "direction": "expense",
+        "reason_json": None,
+    })
+
+    class BackfillClient:
+        def get_players(self):
+            return {10: {"name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2}}
+
+    sync.sync_players(BackfillClient(), conn)
+
+    assert db.get_players(conn) == {
+        10: {"name": "Jugador A", "team": "Equipo X", "team_id": 7, "position": 2},
+    }
+
+
+def test_sync_players_leaves_team_id_null_when_the_catalog_still_has_no_team():
+    # A player who has genuinely left La Liga has no team anywhere -- must not be
+    # retried forever against the bulk catalog once already resolved that way.
+    conn = db.init_db(":memory:")
+    db.upsert_player(conn, 1852, "Ter Stegen", None, position=1)  # team_id already None
+
+    class NoTeamClient:
+        def get_players(self):
+            return {}  # still not in the bulk catalog
+
+    sync.sync_players(NoTeamClient(), conn)  # must not raise, must not loop forever
+
+    assert db.get_players(conn) == {
+        1852: {"name": "Ter Stegen", "team": None, "position": 1, "team_id": None},
+    }
+
+
 def test_sync_players_skips_api_call_when_nothing_new():
     conn = db.init_db(":memory:")
-    db.upsert_player(conn, 10, "Jugador A", "Equipo X")
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", team_id=7)  # fully resolved already
     db.insert_money_event(conn, {
         "id": "e1", "date": 1, "round_id": None, "type": "market", "user_id": 1,
         "counterparty_id": None, "player_id": 10, "amount": 100, "direction": "expense",

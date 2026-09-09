@@ -209,6 +209,11 @@ def get_known_player_ids(conn):
     return {row["id"] for row in rows}
 
 
+def get_player_ids_missing_team_id(conn):
+    rows = conn.execute("SELECT id FROM players WHERE team_id IS NULL").fetchall()
+    return {row["id"] for row in rows}
+
+
 def get_standings(conn):
     rows = conn.execute("SELECT * FROM standings ORDER BY position ASC").fetchall()
     return [dict(row) for row in rows]

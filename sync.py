@@ -142,7 +142,15 @@ def sync_players(client, conn):
     known_ids = db.get_known_player_ids(conn)
     needed_ids = {e["player_id"] for e in events if e["player_id"] is not None}
     missing_ids = needed_ids - known_ids
-    if not missing_ids:
+
+    # A known player can be missing team_id from before the crest feature existed,
+    # or because they weren't on anyone's squad yet when their identity was first
+    # resolved. Retry those against the bulk catalog too so a movement involving a
+    # player nobody currently owns still gets its team crest -- not just the ones
+    # sync_squads_and_form happens to touch because they're on a squad right now.
+    team_id_backfill_ids = db.get_player_ids_missing_team_id(conn) - missing_ids
+
+    if not missing_ids and not team_id_backfill_ids:
         return
 
     players = client.get_players()
@@ -168,6 +176,16 @@ def sync_players(client, conn):
             db.upsert_player(
                 conn, player_id, info["name"],
                 team=info.get("team"), position=info.get("position"), team_id=info.get("team_id"),
+            )
+
+    for player_id in team_id_backfill_ids:
+        info = players.get(player_id)
+        # Not in the bulk catalog at all means they're genuinely off any current La
+        # Liga roster (not a transient gap) -- team_id stays None, correctly.
+        if info and info.get("team_id"):
+            db.upsert_player(
+                conn, player_id, info["name"],
+                team=info.get("team"), position=info.get("position"), team_id=info["team_id"],
             )
 
 
