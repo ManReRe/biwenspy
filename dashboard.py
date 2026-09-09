@@ -73,9 +73,11 @@ function showTab(id) {
   document.getElementById('tab-' + id).classList.add('active');
   document.getElementById('btn-' + id).classList.add('active');
 }
-function showManager(userId) {
-  document.querySelectorAll('.manager-panel').forEach(function(p) { p.classList.remove('active'); });
-  var panel = document.getElementById('manager-' + userId);
+function showManager(prefix, userId) {
+  document.querySelectorAll('.manager-panel[data-prefix="' + prefix + '"]').forEach(function(p) {
+    p.classList.remove('active');
+  });
+  var panel = document.getElementById('manager-' + prefix + '-' + userId);
   if (panel) { panel.classList.add('active'); }
 }
 """
@@ -303,10 +305,161 @@ def _movements_tab_html(events, names, players, users, rounds_by_id, running_bal
             f"<tbody>{rows_html}</tbody></table></div>"
         )
         active_class = " active" if index == 0 else ""
-        panels.append(f'<div class="manager-panel{active_class}" id="manager-{user_id}">{summary}{table}</div>')
+        panels.append(
+            f'<div class="manager-panel{active_class}" data-prefix="movimientos" '
+            f'id="manager-movimientos-{user_id}">{summary}{table}</div>'
+        )
 
     select_html = (
-        f'<select id="managerSelect" onchange="showManager(this.value)">{"".join(options)}</select>'
+        '<select id="managerSelect-movimientos" onchange="showManager(\'movimientos\', this.value)">'
+        f'{"".join(options)}</select>'
+    )
+    return select_html + "".join(panels)
+
+
+POSITION_LABELS = {1: "Portero", 2: "Defensa", 3: "Centrocampista", 4: "Delantero"}
+
+
+def _position_label(position):
+    return POSITION_LABELS.get(position, "?")
+
+
+def _squads_tab_html(squad_table, names, users):
+    user_ids_in_order = [u["id"] for u in users]
+    for user_id in squad_table:
+        if user_id not in user_ids_in_order:
+            user_ids_in_order.append(user_id)
+
+    if not user_ids_in_order:
+        return "<p>Sin managers todavia.</p>"
+
+    options = []
+    panels = []
+    for index, user_id in enumerate(user_ids_in_order):
+        rows = squad_table.get(user_id, [])
+        manager_name = html.escape(names.get(user_id, str(user_id)))
+        options.append(f'<option value="{user_id}">{manager_name} ({len(rows)} jugadores)</option>')
+
+        row_html = []
+        for player in rows:
+            price = f"{player['price_paid']:,} EUR" if player["price_paid"] is not None else "-"
+            acquired = _format_date(player["acquired_date"]) if player["acquired_date"] else "-"
+            row_html.append(
+                f"<tr><td>{_position_label(player['position'])}</td>"
+                f"<td>{html.escape(player['name'])}</td>"
+                f"<td>{html.escape(player['team'] or '-')}</td>"
+                f"<td>{price}</td><td>{acquired}</td></tr>"
+            )
+        empty_row = '<tr><td colspan="5">Sin jugadores todavia.</td></tr>'
+        rows_html = "".join(row_html) if row_html else empty_row
+        table = (
+            '<div class="table-wrap"><table><thead><tr><th>Posicion</th><th>Jugador</th>'
+            "<th>Equipo</th><th>Precio pagado</th><th>Fichado</th></tr></thead>"
+            f"<tbody>{rows_html}</tbody></table></div>"
+        )
+        active_class = " active" if index == 0 else ""
+        panels.append(
+            f'<div class="manager-panel{active_class}" data-prefix="plantillas" '
+            f'id="manager-plantillas-{user_id}">{table}</div>'
+        )
+
+    select_html = (
+        '<select id="managerSelect-plantillas" onchange="showManager(\'plantillas\', this.value)">'
+        f'{"".join(options)}</select>'
+    )
+    return select_html + "".join(panels)
+
+
+def _lineup_rows_html(lineup):
+    captain_id = lineup["captain"]["player_id"]
+    rows = []
+    for player in lineup["starters"]:
+        captain_badge = ' <span class="badge">C</span>' if player["player_id"] == captain_id else ""
+        name_cell = html.escape(player["name"]) + captain_badge
+        rows.append(
+            f"<tr><td>{_position_label(player['position'])}</td><td>{name_cell}</td>"
+            f"<td>{player['avg_points']:.1f}</td></tr>"
+        )
+    return "".join(rows)
+
+
+def _lineup_html(lineup):
+    if lineup is None:
+        return "<p>No hay suficientes jugadores disponibles en la plantilla para sugerir una alineacion.</p>"
+    rows_html = _lineup_rows_html(lineup)
+    return (
+        f'<p><strong>Formacion sugerida:</strong> {lineup["formation"]} '
+        f'&nbsp;&middot;&nbsp; Puntos esperados (suma de medias recientes): {lineup["total_points"]:.1f}</p>'
+        '<div class="table-wrap"><table><thead><tr><th>Posicion</th><th>Jugador</th>'
+        "<th>Media puntos recientes</th></tr></thead>"
+        f"<tbody>{rows_html}</tbody></table></div>"
+    )
+
+
+def _market_profile_html(profile):
+    return (
+        '<div class="table-wrap"><table><tbody>'
+        f"<tr><td>Caja actual</td><td>{profile['cash']:,} EUR</td></tr>"
+        f"<tr><td>Operaciones totales</td><td>{profile['total_trades']}</td></tr>"
+        f"<tr><td>Gasto medio por fichaje</td><td>{profile['avg_purchase']:,} EUR</td></tr>"
+        f"<tr><td>Ingreso medio por venta</td><td>{profile['avg_sale']:,} EUR</td></tr>"
+        f"<tr><td>Operaciones en los ultimos 14 dias</td><td>{profile['recent_trades']}</td></tr>"
+        "</tbody></table></div>"
+    )
+
+
+_EMPTY_MARKET_PROFILE = {"cash": 0, "total_trades": 0, "avg_purchase": 0, "avg_sale": 0, "recent_trades": 0}
+
+
+def _next_round_tab_html(users, names, squad_table, players, player_form, market_profile):
+    user_ids_in_order = [u["id"] for u in users]
+    for user_id in squad_table:
+        if user_id not in user_ids_in_order:
+            user_ids_in_order.append(user_id)
+
+    if not user_ids_in_order:
+        return "<p>Sin managers todavia.</p>"
+
+    lineup_disclosure = (
+        '<div class="disclosure">Esto es una sugerencia calculada a partir de la plantilla real '
+        "y la media de puntos de las ultimas jornadas jugadas -- Biwenger no publica la "
+        "alineacion real de otro manager hasta que la jornada ya ha empezado, asi que esto NO "
+        "es necesariamente lo que ese manager vaya a poner.</div>"
+    )
+    profile_disclosure = (
+        '<div class="disclosure">Este perfil describe el comportamiento pasado real del manager '
+        "(gasto, frecuencia, caja disponible) -- no predice que jugador va a fichar ni cuanto va "
+        "a pujar, porque Biwenger no expone ninguna senal sobre la intencion de otro manager."
+        "</div>"
+    )
+
+    options = []
+    panels = []
+    for index, user_id in enumerate(user_ids_in_order):
+        manager_name = html.escape(names.get(user_id, str(user_id)))
+        options.append(f'<option value="{user_id}">{manager_name}</option>')
+
+        squad_player_ids = [row["player_id"] for row in squad_table.get(user_id, [])]
+        lineup = analytics.recommend_lineup(squad_player_ids, players, player_form)
+        profile = market_profile.get(user_id, _EMPTY_MARKET_PROFILE)
+
+        panel_html = (
+            "<h3>Alineacion recomendada para la proxima jornada</h3>"
+            f"{_lineup_html(lineup)}"
+            f"{lineup_disclosure}"
+            "<h3>Perfil de mercado</h3>"
+            f"{_market_profile_html(profile)}"
+            f"{profile_disclosure}"
+        )
+        active_class = " active" if index == 0 else ""
+        panels.append(
+            f'<div class="manager-panel{active_class}" data-prefix="jornada" '
+            f'id="manager-jornada-{user_id}">{panel_html}</div>'
+        )
+
+    select_html = (
+        '<select id="managerSelect-jornada" onchange="showManager(\'jornada\', this.value)">'
+        f'{"".join(options)}</select>'
     )
     return select_html + "".join(panels)
 
@@ -382,6 +535,11 @@ def build_dashboard_html(conn):
     biggest_bonus_round = analytics.compute_biggest_bonus_round(events, rounds)
     round_bonus_rows = analytics.compute_round_bonus_table(events, rounds)
 
+    squads = db.get_all_squads(conn)
+    player_form = db.get_player_form(conn)
+    squad_table = analytics.compute_squad_table(squads, players)
+    market_profile = analytics.compute_market_profile(events, users, current_balances)
+
     balance_fig_html = plot(_balance_chart(balance_timelines, names), output_type="div", include_plotlyjs=True)
     points_fig_html = plot(_points_chart(points_timelines, names), output_type="div", include_plotlyjs=False)
 
@@ -405,6 +563,8 @@ def build_dashboard_html(conn):
 <button class="tab-btn" id="btn-desglose" onclick="showTab('desglose')">Desglose</button>
 <button class="tab-btn" id="btn-jornadas" onclick="showTab('jornadas')">Jornadas</button>
 <button class="tab-btn" id="btn-movimientos" onclick="showTab('movimientos')">Movimientos</button>
+<button class="tab-btn" id="btn-plantillas" onclick="showTab('plantillas')">Plantillas</button>
+<button class="tab-btn" id="btn-jornada" onclick="showTab('jornada')">Proxima jornada</button>
 <button class="tab-btn" id="btn-curiosidades" onclick="showTab('curiosidades')">Curiosidades</button>
 </div>
 
@@ -442,6 +602,20 @@ def build_dashboard_html(conn):
 <div class="card">
 <h2>Movimientos por manager</h2>
 {_movements_tab_html(events, names, players, users, rounds_by_id, running_balances)}
+</div>
+</div>
+
+<div class="tab-panel" id="tab-plantillas">
+<div class="card">
+<h2>Plantilla por manager</h2>
+{_squads_tab_html(squad_table, names, users)}
+</div>
+</div>
+
+<div class="tab-panel" id="tab-jornada">
+<div class="card">
+<h2>Recomendaciones para la proxima jornada</h2>
+{_next_round_tab_html(users, names, squad_table, players, player_form, market_profile)}
 </div>
 </div>
 

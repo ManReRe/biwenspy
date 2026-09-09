@@ -102,5 +102,29 @@ class BiwengerClient:
             players[int(player_id)] = {
                 "name": info.get("name"),
                 "team": teams.get(info.get("teamID")),
+                "position": info.get("position"),
+                "status": info.get("status", "ok"),
+                # Points from the player's most recently played rounds, oldest first.
+                "recent_points": info.get("fitness") or [],
             }
         return players
+
+    def get_manager_squad(self, user_id):
+        """Return the current squad of any manager in the league (not just self):
+        [{"player_id", "price_paid", "acquired_date"}, ...].
+
+        Confirmed live: /user/{id} exposes any manager's owned players even when
+        the league hides balances, since that privacy setting only affects money.
+        `price` is absent for players kept from before the tracked purchase
+        history (e.g. season start), so price_paid can be None.
+        """
+        data = self._get(f"/user/{user_id}", params={"fields": "*,players(id,owner)"})
+        squad = []
+        for entry in data.get("players", []):
+            owner = entry.get("owner") or {}
+            squad.append({
+                "player_id": entry["id"],
+                "price_paid": owner.get("price"),
+                "acquired_date": owner.get("date"),
+            })
+        return squad

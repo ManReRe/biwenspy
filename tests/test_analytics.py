@@ -6,8 +6,11 @@ from analytics import (
     compute_curious_facts,
     compute_current_balances,
     compute_income_breakdown,
+    compute_market_profile,
     compute_points_timeline,
     compute_round_bonus_table,
+    compute_squad_table,
+    recommend_lineup,
 )
 
 
@@ -255,3 +258,119 @@ def test_round_bonus_table_falls_back_to_a_placeholder_name_for_an_unknown_round
 
 def test_round_bonus_table_returns_empty_list_for_no_events():
     assert compute_round_bonus_table([], []) == []
+
+
+def test_squad_table_groups_by_manager_and_sorts_gk_before_outfielders():
+    squads = [
+        {"user_id": 1, "player_id": 10, "price_paid": 100, "acquired_date": 5},
+        {"user_id": 1, "player_id": 20, "price_paid": None, "acquired_date": 1},
+    ]
+    players = {
+        10: {"name": "Zeta", "team": "X", "position": 3},
+        20: {"name": "Alfa", "team": "Y", "position": 1},
+    }
+
+    result = compute_squad_table(squads, players)
+
+    assert [row["name"] for row in result[1]] == ["Alfa", "Zeta"]
+    assert result[1][0]["price_paid"] is None
+
+
+def test_squad_table_falls_back_to_a_placeholder_name_for_an_unknown_player():
+    squads = [{"user_id": 1, "player_id": 10, "price_paid": 100, "acquired_date": 5}]
+
+    result = compute_squad_table(squads, players={})
+
+    assert result[1][0]["name"] == "Jugador 10"
+
+
+def _form(recent_points, status="ok"):
+    return {"recent_points": recent_points, "status": status}
+
+
+def test_recommend_lineup_picks_the_only_feasible_formation():
+    # Exactly enough for 4-4-2 (1 GK + 4 DF + 4 MF + 2 FW = 11) and short on
+    # defenders/forwards for every other supported formation.
+    players = {1: {"name": "GK1", "position": 1}}
+    player_form = {1: _form([5])}
+    for i in range(2, 6):
+        players[i] = {"name": f"DF{i}", "position": 2}
+        player_form[i] = _form([3])
+    for i in range(6, 10):
+        players[i] = {"name": f"MF{i}", "position": 3}
+        player_form[i] = _form([4])
+    players[10] = {"name": "FW10", "position": 4}
+    player_form[10] = _form([10])
+    players[11] = {"name": "FW11", "position": 4}
+    player_form[11] = _form([2])
+
+    result = recommend_lineup(squad_player_ids=list(players), players=players, player_form=player_form)
+
+    assert result["formation"] == "4-4-2"
+    assert len(result["starters"]) == 11
+    assert result["captain"]["player_id"] == 10  # FW10, highest avg (10.0)
+    assert result["total_points"] == 5 + 3 * 4 + 4 * 4 + 10 + 2
+
+
+def test_recommend_lineup_excludes_players_not_marked_ok():
+    players = {1: {"name": "GK1", "position": 1}, 2: {"name": "GK2", "position": 1}}
+    player_form = {1: _form([1], status="injured"), 2: _form([9], status="ok")}
+
+    result = recommend_lineup(squad_player_ids=[1, 2], players=players, player_form=player_form)
+
+    assert result is None  # only one eligible GK and no outfielders at all
+
+
+def test_recommend_lineup_ignores_non_numeric_fitness_entries():
+    # Biwenger's per-round "fitness" can hold None or a status string like "doubt"
+    # instead of a score for a round the player didn't play -- confirmed live.
+    players = {1: {"name": "GK1", "position": 1}}
+    player_form = {1: _form([5, None, "doubt", "injured"])}
+    for i in range(2, 6):
+        players[i] = {"name": f"DF{i}", "position": 2}
+        player_form[i] = _form([3])
+    for i in range(6, 10):
+        players[i] = {"name": f"MF{i}", "position": 3}
+        player_form[i] = _form([4])
+    for i in (10, 11):
+        players[i] = {"name": f"FW{i}", "position": 4}
+        player_form[i] = _form([2])
+
+    result = recommend_lineup(squad_player_ids=list(players), players=players, player_form=player_form)
+
+    gk_avg = next(p["avg_points"] for p in result["starters"] if p["player_id"] == 1)
+    assert gk_avg == 5.0  # None/"doubt"/"injured" excluded, only the real 5 counts
+
+
+def test_recommend_lineup_returns_none_without_a_fit_goalkeeper():
+    players = {1: {"name": "GK1", "position": 1}}
+    player_form = {1: _form([5], status="injured")}
+
+    assert recommend_lineup(squad_player_ids=[1], players=players, player_form=player_form) is None
+
+
+def test_market_profile_computes_averages_cash_and_recent_activity():
+    day = 86400
+    events = [
+        _event(1, 1_000, "expense", date=0, type="market"),
+        _event(1, 3_000, "expense", date=1, type="market"),
+        _event(1, 2_000, "income", date=2, type="transfer"),
+        _event(1, 500, "income", date=20 * day, type="roundFinished"),  # not a trade
+        _event(1, 900, "expense", date=20 * day, type="market"),  # inside the 14-day window
+    ]
+    users = [{"id": 1}]
+    current_balances = {1: 12_345}
+
+    profile = compute_market_profile(events, users, current_balances, now=20 * day)
+
+    assert profile[1]["cash"] == 12_345
+    assert profile[1]["total_trades"] == 4  # 3 purchases + 1 sale, excludes the roundFinished
+    assert profile[1]["avg_purchase"] == round((1_000 + 3_000 + 900) / 3)
+    assert profile[1]["avg_sale"] == 2_000
+    assert profile[1]["recent_trades"] == 1  # only the date==20*day market expense
+
+
+def test_market_profile_includes_users_with_no_trades():
+    profile = compute_market_profile([], users=[{"id": 1}], current_balances={})
+
+    assert profile == {1: {"cash": 0, "total_trades": 0, "avg_purchase": 0, "avg_sale": 0, "recent_trades": 0}}

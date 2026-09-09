@@ -244,7 +244,7 @@ def test_build_dashboard_html_has_a_tab_for_each_section():
 
     output = dashboard.build_dashboard_html(conn)
 
-    for tab_id in ("resumen", "desglose", "movimientos", "curiosidades"):
+    for tab_id in ("resumen", "desglose", "movimientos", "plantillas", "jornada", "curiosidades"):
         assert f'id="btn-{tab_id}"' in output
         assert f'id="tab-{tab_id}"' in output
 
@@ -259,7 +259,7 @@ def test_build_dashboard_html_movements_selector_lists_every_manager():
 
     assert '<option value="1">Ana (2 movimientos)</option>' in output
     assert '<option value="2">Beto (0 movimientos)</option>' in output
-    assert 'id="manager-2"' in output
+    assert 'id="manager-movimientos-2"' in output
     assert "Sin movimientos todavia." in output
 
 
@@ -298,5 +298,38 @@ def test_build_dashboard_html_only_the_first_manager_panel_starts_active():
 
     output = dashboard.build_dashboard_html(conn)
 
-    assert 'class="manager-panel active" id="manager-1"' in output
-    assert 'class="manager-panel" id="manager-2"' in output
+    assert 'class="manager-panel active" data-prefix="movimientos" id="manager-movimientos-1"' in output
+    assert 'class="manager-panel" data-prefix="movimientos" id="manager-movimientos-2"' in output
+
+
+def test_squads_tab_lists_players_with_position_team_and_price():
+    conn = db.init_db(":memory:")
+    _populate(conn)
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=2)
+    db.replace_squad(conn, 1, [{"player_id": 10, "price_paid": 3_500_000, "acquired_date": 100}])
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "Defensa" in output
+    assert "Jugador A" in output
+    assert "3,500,000 EUR" in output
+    assert 'id="manager-plantillas-1"' in output
+
+
+def test_next_round_tab_falls_back_when_squad_has_no_eligible_players():
+    conn = db.init_db(":memory:")
+    _populate(conn)  # neither manager has any squad/player_form data
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "No hay suficientes jugadores disponibles" in output
+
+
+def test_next_round_tab_shows_market_profile_from_real_history():
+    conn = db.init_db(":memory:")
+    _populate(conn)  # Ana has one 2,000,000 EUR market purchase (e2)
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert "Gasto medio por fichaje" in output
+    assert "2,000,000 EUR" in output

@@ -1,7 +1,24 @@
 """Derived views over stored money events: balances, points, curious facts."""
+import time
 from collections import defaultdict
 
 STARTING_BALANCE = 20_000_000
+
+# Biwenger position codes, confirmed live against the real API.
+POSITION_GK, POSITION_DF, POSITION_MF, POSITION_FW = 1, 2, 3, 4
+POSITION_ORDER = {POSITION_GK: 0, POSITION_DF: 1, POSITION_MF: 2, POSITION_FW: 3}
+
+# Formation -> required count per outfield line; goalkeeper is always exactly 1.
+FORMATIONS = {
+    "4-4-2": {POSITION_DF: 4, POSITION_MF: 4, POSITION_FW: 2},
+    "4-3-3": {POSITION_DF: 4, POSITION_MF: 3, POSITION_FW: 3},
+    "3-5-2": {POSITION_DF: 3, POSITION_MF: 5, POSITION_FW: 2},
+    "3-4-3": {POSITION_DF: 3, POSITION_MF: 4, POSITION_FW: 3},
+    "5-3-2": {POSITION_DF: 5, POSITION_MF: 3, POSITION_FW: 2},
+    "5-4-1": {POSITION_DF: 5, POSITION_MF: 4, POSITION_FW: 1},
+}
+
+RECENT_ACTIVITY_WINDOW_SECONDS = 14 * 24 * 3600
 
 
 def compute_balance_timeline(money_events, starting_balance=STARTING_BALANCE):
@@ -218,3 +235,128 @@ def compute_biggest_bonus_round(money_events, rounds):
         "round": round_names.get(best_round_id, f"Jornada {best_round_id}"),
         "total": totals[best_round_id],
     }
+
+
+def compute_squad_table(squads, players):
+    """Return {user_id: [{"player_id","name","team","position","price_paid",
+    "acquired_date"}, ...]}, one list per manager, sorted GK -> DF -> MF -> FW
+    then by name."""
+    by_user = defaultdict(list)
+    for entry in squads:
+        info = players.get(entry["player_id"], {})
+        by_user[entry["user_id"]].append({
+            "player_id": entry["player_id"],
+            "name": info.get("name") or f"Jugador {entry['player_id']}",
+            "team": info.get("team"),
+            "position": info.get("position"),
+            "price_paid": entry["price_paid"],
+            "acquired_date": entry["acquired_date"],
+        })
+    for rows in by_user.values():
+        rows.sort(key=lambda r: (POSITION_ORDER.get(r["position"], 99), r["name"]))
+    return dict(by_user)
+
+
+def _average_recent_points(recent_points):
+    # Biwenger's per-round "fitness" entries can be None (round not played) or a
+    # status string like "doubt"/"injured" instead of a score -- confirmed live.
+    numeric = [p for p in recent_points if isinstance(p, (int, float)) and not isinstance(p, bool)]
+    return sum(numeric) / len(numeric) if numeric else 0.0
+
+
+def recommend_lineup(squad_player_ids, players, player_form):
+    """Suggest the strongest starting XI for one manager's squad ahead of the
+    next round, using each eligible player's average recent score as signal.
+
+    This is a data-driven SUGGESTION of the statistically strongest lineup
+    given the real squad -- not a claim about what the manager will actually
+    set (Biwenger only exposes a manager's real lineup once the round has
+    already started, never before).
+
+    Returns {"formation", "starters", "captain", "total_points"}, or None if
+    the squad doesn't have enough eligible players (status == "ok") for ANY
+    supported formation (e.g. no fit goalkeeper, or too few defenders).
+    """
+    by_position = defaultdict(list)
+    for player_id in squad_player_ids:
+        form = player_form.get(player_id, {})
+        if form.get("status", "ok") != "ok":
+            continue
+        info = players.get(player_id, {})
+        by_position[info.get("position")].append({
+            "player_id": player_id,
+            "name": info.get("name") or f"Jugador {player_id}",
+            "position": info.get("position"),
+            "avg_points": _average_recent_points(form.get("recent_points", [])),
+        })
+    for group in by_position.values():
+        group.sort(key=lambda p: p["avg_points"], reverse=True)
+
+    goalkeepers = by_position.get(POSITION_GK, [])
+    if not goalkeepers:
+        return None
+
+    best = None
+    for formation, quotas in FORMATIONS.items():
+        starters = [goalkeepers[0]]
+        feasible = True
+        for position, count in quotas.items():
+            candidates = by_position.get(position, [])
+            if len(candidates) < count:
+                feasible = False
+                break
+            starters.extend(candidates[:count])
+        if not feasible:
+            continue
+
+        total_points = round(sum(p["avg_points"] for p in starters), 2)
+        if best is None or total_points > best["total_points"]:
+            captain = max(starters, key=lambda p: p["avg_points"])
+            best = {
+                "formation": formation,
+                "starters": starters,
+                "captain": captain,
+                "total_points": total_points,
+            }
+    return best
+
+
+def compute_market_profile(money_events, users, current_balances, now=None):
+    """Return {user_id: {"cash", "total_trades", "avg_purchase", "avg_sale",
+    "recent_trades"}}, one entry per manager, describing their REAL past
+    market behaviour.
+
+    This describes what already happened -- it is NOT a prediction of which
+    player a manager will buy next or how much they'll bid, since Biwenger
+    exposes no signal at all for another manager's buying intent.
+    """
+    if now is None:
+        now = time.time()
+    cutoff = now - RECENT_ACTIVITY_WINDOW_SECONDS
+
+    purchases = defaultdict(list)
+    sales = defaultdict(list)
+    recent_trades = defaultdict(int)
+    for event in money_events:
+        if event["type"] not in ("market", "transfer"):
+            continue
+        if event["direction"] == "expense":
+            purchases[event["user_id"]].append(event["amount"])
+        elif event["type"] == "transfer":
+            sales[event["user_id"]].append(event["amount"])
+        if event["date"] >= cutoff:
+            recent_trades[event["user_id"]] += 1
+
+    profile = {}
+    for user in users:
+        user_id = user["id"]
+        user_purchases = purchases.get(user_id, [])
+        user_sales = sales.get(user_id, [])
+        profile[user_id] = {
+            "cash": current_balances.get(user_id, 0),
+            "total_trades": len(user_purchases) + len(user_sales),
+            "avg_purchase": round(sum(user_purchases) / len(user_purchases)) if user_purchases else 0,
+            "avg_sale": round(sum(user_sales) / len(user_sales)) if user_sales else 0,
+            "recent_trades": recent_trades.get(user_id, 0),
+        }
+    return profile

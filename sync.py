@@ -142,17 +142,44 @@ def sync_players(client, conn):
             db.upsert_player(conn, player_id, info["name"], info["team"])
 
 
+def sync_squads_and_form(client, conn, users):
+    """Snapshot every manager's current squad, plus each owned player's identity
+    (name/team/position) and recent form (points/status).
+
+    Unlike sync_players (which only backfills players referenced by a money
+    event), a player kept since before the tracked history has no purchase
+    event at all -- this is the only place their name/team/position gets
+    stored, since it reads the live squad directly instead of the board log.
+    """
+    catalog = client.get_players()
+    owned_ids = set()
+
+    for user in users:
+        squad = client.get_manager_squad(user["id"])
+        db.replace_squad(conn, user["id"], squad)
+        owned_ids.update(entry["player_id"] for entry in squad)
+
+    for player_id in owned_ids:
+        info = catalog.get(player_id)
+        if not info:
+            continue
+        db.upsert_player(conn, player_id, info["name"], info["team"], info["position"])
+        db.upsert_player_form(conn, player_id, json.dumps(info["recent_points"]), info["status"])
+
+
 def main():
     config = load_config()
     client = BiwengerClient(config["token"], config["league_id"], config["user_id"])
     conn = db.init_db(DB_PATH)
 
     try:
-        for user in client.get_league_users():
+        users = client.get_league_users()
+        for user in users:
             db.upsert_user(conn, user["id"], user["name"], user.get("icon"))
 
         sync_board(client, conn)
         sync_players(client, conn)
+        sync_squads_and_form(client, conn, users)
         calibrate_starting_balance(client, conn, config["user_id"])
 
         for standing in client.get_standings():

@@ -1,4 +1,5 @@
 """SQLite storage layer for the Biwenger dashboard."""
+import json
 import sqlite3
 
 SCHEMA = """
@@ -54,6 +55,20 @@ CREATE TABLE IF NOT EXISTS sync_state (
 CREATE TABLE IF NOT EXISTS board_items (
     id TEXT PRIMARY KEY
 );
+
+CREATE TABLE IF NOT EXISTS squads (
+    user_id INTEGER,
+    player_id INTEGER,
+    price_paid INTEGER,
+    acquired_date INTEGER,
+    PRIMARY KEY (user_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS player_form (
+    player_id INTEGER PRIMARY KEY,
+    points_json TEXT,
+    status TEXT
+);
 """
 
 
@@ -61,6 +76,10 @@ def init_db(path):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    try:
+        conn.execute("ALTER TABLE players ADD COLUMN position INTEGER")
+    except sqlite3.OperationalError:
+        pass  # column already added by a previous run
     conn.commit()
     return conn
 
@@ -74,11 +93,12 @@ def upsert_user(conn, id, name, icon=None):
     conn.commit()
 
 
-def upsert_player(conn, id, name, team=None):
+def upsert_player(conn, id, name, team=None, position=None):
     conn.execute(
-        "INSERT INTO players (id, name, team) VALUES (?, ?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET name = excluded.name, team = excluded.team",
-        (id, name, team),
+        "INSERT INTO players (id, name, team, position) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET name = excluded.name, team = excluded.team, "
+        "position = excluded.position",
+        (id, name, team, position),
     )
     conn.commit()
 
@@ -171,7 +191,10 @@ def get_users(conn):
 
 def get_players(conn):
     rows = conn.execute("SELECT * FROM players").fetchall()
-    return {row["id"]: {"name": row["name"], "team": row["team"]} for row in rows}
+    return {
+        row["id"]: {"name": row["name"], "team": row["team"], "position": row["position"]}
+        for row in rows
+    }
 
 
 def get_known_player_ids(conn):
@@ -182,3 +205,40 @@ def get_known_player_ids(conn):
 def get_standings(conn):
     rows = conn.execute("SELECT * FROM standings ORDER BY position ASC").fetchall()
     return [dict(row) for row in rows]
+
+
+def replace_squad(conn, user_id, entries):
+    """Overwrite a manager's squad with the given current snapshot (not append-only:
+    a sold/released player must disappear, unlike the historical money_events log)."""
+    conn.execute("DELETE FROM squads WHERE user_id = ?", (user_id,))
+    conn.executemany(
+        "INSERT INTO squads (user_id, player_id, price_paid, acquired_date) VALUES (?, ?, ?, ?)",
+        [(user_id, e["player_id"], e["price_paid"], e["acquired_date"]) for e in entries],
+    )
+    conn.commit()
+
+
+def get_all_squads(conn):
+    rows = conn.execute("SELECT * FROM squads").fetchall()
+    return [dict(row) for row in rows]
+
+
+def upsert_player_form(conn, player_id, points_json, status):
+    conn.execute(
+        "INSERT INTO player_form (player_id, points_json, status) VALUES (?, ?, ?) "
+        "ON CONFLICT(player_id) DO UPDATE SET points_json = excluded.points_json, "
+        "status = excluded.status",
+        (player_id, points_json, status),
+    )
+    conn.commit()
+
+
+def get_player_form(conn):
+    rows = conn.execute("SELECT * FROM player_form").fetchall()
+    return {
+        row["player_id"]: {
+            "recent_points": json.loads(row["points_json"]) if row["points_json"] else [],
+            "status": row["status"],
+        }
+        for row in rows
+    }

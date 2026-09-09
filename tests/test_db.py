@@ -55,8 +55,8 @@ def test_sync_state_roundtrip():
 
 def test_get_players_and_known_player_ids():
     conn = db.init_db(":memory:")
-    db.upsert_player(conn, 10, "Jugador A", "Equipo X")
-    assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X"}}
+    db.upsert_player(conn, 10, "Jugador A", "Equipo X", position=3)
+    assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X", "position": 3}}
     assert db.get_known_player_ids(conn) == {10}
 
 
@@ -68,3 +68,19 @@ def test_upsert_standing_and_get_standings_ordered_by_position():
         {"user_id": 1, "points": 60, "position": 1},
         {"user_id": 2, "points": 40, "position": 2},
     ]
+
+
+def test_replace_squad_overwrites_previous_snapshot():
+    conn = db.init_db(":memory:")
+    db.replace_squad(conn, 1, [{"player_id": 10, "price_paid": 100, "acquired_date": 5}])
+    db.replace_squad(conn, 1, [{"player_id": 20, "price_paid": None, "acquired_date": 9}])
+    assert db.get_all_squads(conn) == [
+        {"user_id": 1, "player_id": 20, "price_paid": None, "acquired_date": 9},
+    ]
+
+
+def test_player_form_roundtrip():
+    conn = db.init_db(":memory:")
+    db.upsert_player_form(conn, 10, "[2, 5, 3]", "ok")
+    db.upsert_player_form(conn, 10, "[5, 3]", "injured")
+    assert db.get_player_form(conn) == {10: {"recent_points": [5, 3], "status": "injured"}}

@@ -62,12 +62,40 @@ def test_get_players_resolves_team_names_by_id():
     payload = {
         "status": 200,
         "data": {
-            "players": {"10": {"id": 10, "name": "Jugador A", "teamID": 1}},
+            "players": {
+                "10": {
+                    "id": 10, "name": "Jugador A", "teamID": 1, "position": 3,
+                    "status": "ok", "fitness": [2, 5, 3],
+                },
+            },
             "teams": {"1": {"id": 1, "name": "Equipo X"}},
         },
     }
     client, _ = _client(FakeResponse(200, payload))
-    assert client.get_players() == {10: {"name": "Jugador A", "team": "Equipo X"}}
+    assert client.get_players() == {
+        10: {
+            "name": "Jugador A", "team": "Equipo X", "position": 3,
+            "status": "ok", "recent_points": [2, 5, 3],
+        },
+    }
+
+
+def test_get_manager_squad_returns_player_id_price_and_date():
+    payload = {
+        "status": 200,
+        "data": {
+            "players": [
+                {"id": 10, "owner": {"date": 1700000000, "price": 5000000}},
+                {"id": 20, "owner": {"date": 1600000000}},
+            ],
+        },
+    }
+    client, session = _client(FakeResponse(200, payload))
+    assert client.get_manager_squad(999) == [
+        {"player_id": 10, "price_paid": 5000000, "acquired_date": 1700000000},
+        {"player_id": 20, "price_paid": None, "acquired_date": 1600000000},
+    ]
+    assert session.last_call["url"].endswith("/user/999")
 
 
 def test_raises_auth_error_on_401():

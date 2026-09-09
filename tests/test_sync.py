@@ -318,7 +318,7 @@ def test_sync_players_fetches_and_stores_only_referenced_players():
 
     sync.sync_players(PlayersClient(), conn)
 
-    assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X"}}
+    assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X", "position": None}}
 
 
 def test_sync_players_skips_api_call_when_nothing_new():
@@ -335,6 +335,35 @@ def test_sync_players_skips_api_call_when_nothing_new():
             raise AssertionError("should not be called")
 
     sync.sync_players(ExplodingClient(), conn)  # must not raise
+
+
+def test_sync_squads_and_form_stores_squads_and_enriches_owned_players():
+    conn = db.init_db(":memory:")
+
+    class SquadClient:
+        def get_players(self):
+            return {
+                10: {"name": "Jugador A", "team": "Equipo X", "position": 2,
+                     "status": "ok", "recent_points": [3, 5]},
+                # Not owned by anyone below -- must NOT be upserted (irrelevant to
+                # any current squad, so it's left for sync_players to handle instead).
+                99: {"name": "Jugador Z", "team": "Equipo Z", "position": 4,
+                     "status": "ok", "recent_points": [1]},
+            }
+
+        def get_manager_squad(self, user_id):
+            return {
+                1: [{"player_id": 10, "price_paid": 100, "acquired_date": 5}],
+                2: [],
+            }[user_id]
+
+    sync.sync_squads_and_form(SquadClient(), conn, users=[{"id": 1}, {"id": 2}])
+
+    assert db.get_all_squads(conn) == [
+        {"user_id": 1, "player_id": 10, "price_paid": 100, "acquired_date": 5},
+    ]
+    assert db.get_players(conn) == {10: {"name": "Jugador A", "team": "Equipo X", "position": 2}}
+    assert db.get_player_form(conn) == {10: {"recent_points": [3, 5], "status": "ok"}}
 
 
 def test_main_exits_cleanly_on_auth_error(tmp_path, monkeypatch):
