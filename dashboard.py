@@ -46,7 +46,28 @@ table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; }
 td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
 tr:last-child td { border-bottom: none; }
-.table-wrap { overflow-x: auto; }
+.table-wrap {
+  overflow-x: auto;
+  /* "Scroll shadow" trick: two solid gradients matching the card background scroll
+     WITH the content and mask the shadow near an edge once there's nothing left to
+     scroll past it; two shadow gradients stay fixed (background-attachment: scroll)
+     so they only show while there's still content off-screen in that direction.
+     Without this, a table wider than its card just gets cut off with no visual hint
+     that there's more to see -- it looks broken rather than scrollable. */
+  background:
+    linear-gradient(to right, var(--card-bg) 30%, rgba(255, 255, 255, 0)) 0 0,
+    linear-gradient(to left, var(--card-bg) 30%, rgba(255, 255, 255, 0)) 100% 0,
+    linear-gradient(to right, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0)) 0 0,
+    linear-gradient(to left, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0)) 100% 0;
+  background-repeat: no-repeat;
+  background-color: var(--card-bg);
+  background-size: 32px 100%, 32px 100%, 12px 100%, 12px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+.table-wrap::-webkit-scrollbar { height: 8px; }
+.table-wrap::-webkit-scrollbar-track { background: transparent; }
+.table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.table-wrap { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .amount-income { color: var(--income); font-weight: 600; }
 .amount-expense { color: var(--expense); font-weight: 600; }
 .amount-balance { color: var(--text-muted); font-weight: 600; }
@@ -65,9 +86,14 @@ select {
 .manager-panel.active { display: block; }
 .badge { display: inline-block; background: var(--primary-light); color: var(--primary); border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.jornadas-table .jornada-name { position: sticky; left: 0; background: var(--card-bg); z-index: 1; }
+.jornadas-table th { white-space: normal; max-width: 96px; }
+.jornadas-table .jornada-name {
+  position: sticky; left: 0; background: var(--card-bg); z-index: 1; white-space: nowrap;
+  box-shadow: 1px 0 0 var(--border);
+}
 .cell-best { background: var(--primary-light); border-radius: 6px; font-weight: 700; }
 .totals-row td { border-top: 2px solid var(--border); }
+.scroll-hint { color: var(--primary); font-size: 0.82rem; font-weight: 600; margin: 0 0 8px; }
 """
 
 SCRIPT = """
@@ -515,7 +541,17 @@ def _jornadas_tab_html(round_bonus_rows, standings, names):
         f'{"".join(total_cells)}</tr>'
     )
 
+    # With enough managers the table is wider than the card and needs horizontal
+    # scrolling; the scroll-shadow CSS hint alone is too subtle to notice at a
+    # glance, so spell it out -- otherwise a table cut off mid-column just looks
+    # broken instead of "scroll for more".
+    scroll_hint = (
+        '<p class="scroll-hint">Desliza la tabla hacia la derecha para ver a todos los managers &rarr;</p>'
+        if len(user_ids) > 5 else ""
+    )
+
     return (
+        f"{scroll_hint}"
         '<div class="table-wrap"><table class="jornadas-table"><thead><tr>'
         '<th class="jornada-name">Jornada</th>' + header_cells + "</tr></thead>"
         f"<tbody>{''.join(body_rows)}{total_row}</tbody></table></div>"

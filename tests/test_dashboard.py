@@ -360,3 +360,23 @@ def test_jornadas_tab_highlights_the_top_bonus_and_the_overall_leader():
     assert '<td class="num">500,000 EUR</td>' in output
     # Ana also leads the season total, so her total-row cell carries the badge.
     assert "<strong>2,000,000 EUR</strong> <span class=\"badge\">Lider</span>" in output
+    # Only 2 managers: the table fits without scrolling, so no hint is needed.
+    assert '<p class="scroll-hint">' not in output
+
+
+def test_jornadas_tab_shows_a_scroll_hint_with_many_managers():
+    conn = db.init_db(":memory:")
+    db.upsert_round(conn, 1, "Jornada 1", 100)
+    for user_id in range(1, 7):  # 6 managers -- wide enough to need horizontal scroll
+        db.upsert_user(conn, user_id, f"Manager {user_id}", "")
+        db.upsert_standing(conn, user_id, 0, user_id)
+        db.insert_money_event(conn, {
+            "id": f"e{user_id}", "date": 100, "round_id": 1, "type": "roundFinished", "user_id": user_id,
+            "counterparty_id": None, "player_id": None, "amount": 100_000, "direction": "income",
+            "reason_json": "{}",
+        })
+
+    output = dashboard.build_dashboard_html(conn)
+
+    assert '<p class="scroll-hint">' in output
+    assert "Desliza la tabla" in output
