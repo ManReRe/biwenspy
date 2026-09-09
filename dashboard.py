@@ -147,8 +147,9 @@ TRANSLATIONS = {
         "chart_points_title": "Puntos acumulados por manager",
         "chart_points_axis": "Puntos",
         "update_button": "Actualizar ahora",
-        "update_working": "Actualizando... (tarda cerca de un minuto)",
-        "update_ok": "Actualizacion en marcha. Los datos nuevos tardaran cerca de un minuto en publicarse -- recarga la pagina entonces.",
+        "update_working": "Sincronizando con Biwenger...",
+        "update_done": "Listo, datos actualizados. Recargando...",
+        "update_timeout": "Esta tardando mas de lo normal -- comprueba la pestana Actions del repositorio.",
         "update_error": "No se pudo lanzar la actualizacion. Intentalo de nuevo en un momento.",
     },
     "en": {
@@ -278,8 +279,9 @@ TRANSLATIONS = {
         "chart_points_title": "Cumulative points per manager",
         "chart_points_axis": "Points",
         "update_button": "Update now",
-        "update_working": "Updating... (takes about a minute)",
-        "update_ok": "Update started. The new data will take about a minute to publish -- reload the page then.",
+        "update_working": "Syncing with Biwenger...",
+        "update_done": "Done, data updated. Reloading...",
+        "update_timeout": "This is taking longer than usual -- check the repository's Actions tab.",
         "update_error": "Couldn't start the update. Try again in a moment.",
     },
 }
@@ -539,6 +541,20 @@ function unlockDashboard() {
   var main = document.getElementById('mainContainer');
   if (gate) { gate.style.display = 'none'; }
   if (main) { main.style.display = 'block'; }
+  // The charts render while #mainContainer is still display:none (behind the
+  // login gate), so Plotly can't measure the real container width and falls
+  // back to its own default (~700px) -- on a narrow phone that overflows the
+  // whole page horizontally, and the browser auto-shrinks everything to fit,
+  // making the rest of the UI look tiny until you pinch-zoom. Now that the
+  // container has real layout, force both charts to re-measure and resize.
+  if (window.Plotly) {
+    setTimeout(function() {
+      ['chart-balance', 'chart-points'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) { window.Plotly.Plots.resize(id); }
+      });
+    }, 0);
+  }
 }
 
 function tryLogin() {
@@ -563,33 +579,74 @@ function loginKeydown(event) {
 })();
 
 var TRIGGER_URL = __TRIGGER_URL_JSON__;
+// Public, unauthenticated GitHub API read on a public repo -- no token needed,
+// same as opening the Actions tab in a browser. Used to actually know when the
+// triggered run finishes, instead of guessing "wait about a minute".
+var RUNS_API = "https://api.github.com/repos/ManReRe/biwenspy/actions/workflows/update-dashboard.yml/runs?per_page=1";
+var POLL_INTERVAL_MS = 8000;
+var POLL_TIMEOUT_MS = 3 * 60 * 1000;
+
+function latestRunInfo() {
+  return fetch(RUNS_API, { headers: { "Accept": "application/vnd.github+json" } })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var runs = data.workflow_runs || [];
+      return runs.length ? runs[0] : null;
+    })
+    .catch(function() { return null; });
+}
+
+function finishUpdate(messageKey) {
+  var btn = document.getElementById('updateBtn');
+  var status = document.getElementById('updateStatus');
+  status.textContent = t(currentLang, messageKey);
+  btn.disabled = false;
+  btn.textContent = t(currentLang, 'update_button');
+}
+
+function pollForCompletion(baselineId, deadline) {
+  var status = document.getElementById('updateStatus');
+  if (Date.now() > deadline) {
+    finishUpdate('update_timeout');
+    return;
+  }
+  latestRunInfo().then(function(run) {
+    if (run && run.id !== baselineId && run.status === 'completed') {
+      if (run.conclusion === 'success') {
+        status.textContent = t(currentLang, 'update_done');
+        setTimeout(function() { location.reload(); }, 2000);
+      } else {
+        finishUpdate('update_error');
+      }
+      return;
+    }
+    setTimeout(function() { pollForCompletion(baselineId, deadline); }, POLL_INTERVAL_MS);
+  });
+}
 
 function triggerUpdate() {
   var btn = document.getElementById('updateBtn');
   var status = document.getElementById('updateStatus');
   btn.disabled = true;
   btn.textContent = t(currentLang, 'update_working');
-  status.hidden = true;
+  status.hidden = false;
+  status.textContent = t(currentLang, 'update_working');
 
-  fetch(TRIGGER_URL, { method: 'POST' })
-    .then(function(response) { return response.json().catch(function() { return {ok: false}; }); })
-    .then(function(data) {
-      status.textContent = data.ok ? t(currentLang, 'update_ok') : t(currentLang, 'update_error');
-      status.hidden = false;
-    })
-    .catch(function() {
-      status.textContent = t(currentLang, 'update_error');
-      status.hidden = false;
-    })
-    .finally(function() {
-      // The whole sync+publish cycle takes roughly a minute -- keep the button
-      // disabled for that long so a second click can't pile another run on top
-      // while the first is still running.
-      setTimeout(function() {
-        btn.disabled = false;
-        btn.textContent = t(currentLang, 'update_button');
-      }, 60000);
-    });
+  latestRunInfo().then(function(baseline) {
+    var baselineId = baseline ? baseline.id : null;
+    fetch(TRIGGER_URL, { method: 'POST' })
+      .then(function(response) { return response.json().catch(function() { return {ok: false}; }); })
+      .then(function(data) {
+        if (!data.ok) {
+          finishUpdate('update_error');
+          return;
+        }
+        setTimeout(function() {
+          pollForCompletion(baselineId, Date.now() + POLL_TIMEOUT_MS);
+        }, POLL_INTERVAL_MS);
+      })
+      .catch(function() { finishUpdate('update_error'); });
+  });
 }
 """
 
@@ -1294,8 +1351,8 @@ def build_dashboard_html(conn):
 <div class="header-actions">
 <div class="header-actions-row">
 <select id="langSelect" onchange="applyLanguage(this.value)">
-<option value="es">Espanol</option>
-<option value="en">English</option>
+<option value="es">&#127466;&#127480; Espanol</option>
+<option value="en">&#127468;&#127463; English</option>
 </select>
 <button id="updateBtn" onclick="triggerUpdate()" {_i18n_attr("update_button")}>{_t("update_button")}</button>
 </div>
